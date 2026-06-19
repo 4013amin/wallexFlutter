@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "com.narges.wallex_bot"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "25.1.8937393"
+    ndkVersion = "27.2.12479018"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

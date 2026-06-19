@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'dart:ui';
 import '../services/api_service.dart';
+import '../providers/data_provider.dart';
+import '../providers/auth_provider.dart';
 import 'analysis_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -31,6 +34,11 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   @override
   void initState() {
     super.initState();
+    // بارگذاری داده‌های ذخیره‌شده از حافظه
+    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+    _data = dataProvider.dashboardData;
+    _currentSignals = dataProvider.signals;
+    
     _refreshData();
   }
 
@@ -48,6 +56,11 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           }
           _isLoading = false;
         });
+        
+        // ذخیره داده‌ها برای بازیابی بعدی
+        final dataProvider = Provider.of<DataProvider>(context, listen: false);
+        await dataProvider.saveDashboardData(res);
+        await dataProvider.saveSignals(_currentSignals);
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
@@ -65,10 +78,25 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             _data!['profile']['tokens_balance'] = res['remaining_tokens'];
           }
         });
+        
+        // ذخیره سیگنال‌های جدید
+        final dataProvider = Provider.of<DataProvider>(context, listen: false);
+        await dataProvider.saveSignals(_currentSignals);
+        await dataProvider.saveDashboardData(_data!);
       }
     } finally {
       if (mounted) setState(() => _isScanning = false);
     }
+  }
+
+  void _handleLogout() async {
+    // پاک کردن تمام داده‌های ذخیره‌شده
+    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+    await dataProvider.clearCachedData();
+    
+    // خروج
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    await authProvider.logout();
   }
 
   @override
@@ -156,7 +184,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           _drawerItem(Icons.dashboard_rounded, "داشبورد معاملات", () => Navigator.pop(context), isActive: true),
           _drawerItem(Icons.settings_outlined, "تنظیمات استراتژی", () {}),
           const Spacer(),
-          _drawerItem(Icons.logout_rounded, "خروج از حساب", () => _api.logout(), color: sellColor),
+          _drawerItem(Icons.logout_rounded, "خروج از حساب", _handleLogout, color: sellColor),
           const SizedBox(height: 20),
         ],
       ),

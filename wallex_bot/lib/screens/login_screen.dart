@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -9,7 +10,6 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _userController = TextEditingController();
   final TextEditingController _passController = TextEditingController();
-  final ApiService _apiService = ApiService(); // نمونه‌سازی از کلاس سرویس
   bool _isLoading = false;
 
   Future<void> _handleLogin() async {
@@ -23,17 +23,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    // فراخوانی متد لاگین از ApiService
-    String? token = await _apiService.login(
+    // فراخوانی متد لاگین از AuthProvider
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    bool loginSuccess = await authProvider.login(
       _userController.text.trim(),
       _passController.text.trim(),
     );
 
     setState(() => _isLoading = false);
 
-    if (token != null) {
+    if (loginSuccess) {
       // اگر ورود موفق بود، برو به داشبورد
-      Navigator.pushReplacementNamed(context, '/dashboard');
+      // (main.dart خودکار به داشبورد منتقل می‌شود)
     } else {
       // نمایش پیام خطا
       ScaffoldMessenger.of(context).showSnackBar(
