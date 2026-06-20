@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = "http://127.0.0.1:8000/api"; // آدرس سرور خود را اینجا بزنید
+  static const String baseUrl = "http://10.0.2.2:8000/api"; 
 
   Future<String?> _getToken() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();

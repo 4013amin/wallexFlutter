@@ -1,74 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/api_service.dart';
 
-class AuthProvider extends ChangeNotifier {
-  final ApiService _apiService = ApiService();
-  
-  bool _isAuthenticated = false;
+class AuthProvider with ChangeNotifier {
   String? _token;
-  String? _username;
   bool _isLoading = true;
 
-  // Getters
-  bool get isAuthenticated => _isAuthenticated;
-  String? get token => _token;
-  String? get username => _username;
+  bool get isAuthenticated => _token != null;
   bool get isLoading => _isLoading;
+  String? get token => _token;
 
-  // بررسی اگر کاربر قبلاً وارد شده‌ است
+  // چک کردن وضعیت ورود هنگام باز شدن اپلیکیشن
   Future<void> checkAuthStatus() async {
-    try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      _token = prefs.getString('token');
-      _username = prefs.getString('username');
-      
-      _isAuthenticated = _token != null && _token!.isNotEmpty;
-    } catch (e) {
-      print('[AuthProvider] Error checking auth status: $e');
-      _isAuthenticated = false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+    _isLoading = true;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.containsKey('user_token')) {
+      _token = prefs.getString('user_token');
     }
+
+    _isLoading = false;
+    notifyListeners();
   }
 
-  // ورود کاربر
+  // متد لاگین
   Future<bool> login(String username, String password) async {
-    try {
-      String? token = await _apiService.login(username, password);
-      
-      if (token != null) {
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.setString('username', username);
-        
-        _token = token;
-        _username = username;
-        _isAuthenticated = true;
-        notifyListeners();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      print('[AuthProvider] Login error: $e');
-      return false;
-    }
+    // اینجا کدهای API خودت رو بزن
+    // اگر موفق بود:
+    _token = "TOKEN_FROM_SERVER"; // توکن واقعی را اینجا بگذار
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_token', _token!);
+    
+    notifyListeners();
+    return true;
   }
 
-  // خروج کاربر
+  // متد خروج
   Future<void> logout() async {
-    try {
-      await _apiService.logout();
-      
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      
-      _token = null;
-      _username = null;
-      _isAuthenticated = false;
-      notifyListeners();
-    } catch (e) {
-      print('[AuthProvider] Logout error: $e');
-    }
+    _token = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('user_token'); // حذف توکن از حافظه گوشی
+    notifyListeners(); // با این کار، Main متوجه شده و کاربر را به لاگین می‌برد
   }
 }
