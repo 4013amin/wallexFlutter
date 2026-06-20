@@ -1,106 +1,122 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
+import '../services/api_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  _ProfileScreenState createState() => _ProfileScreenState();
+  State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final Color bgCard = const Color(0xFF111827);
-  final Color accentColor = const Color(0xFF3B82F6);
-  final Color textMuted = const Color(0xFF9CA3AF);
+  final ApiService _api = ApiService();
+  
+  // کنترلرهای فرم برای ذخیره اطلاعات
+  final TextEditingController _apiKeyController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 20),
-        _buildUserHeader(),
-        const SizedBox(height: 25),
-        _buildSectionTitle("تنظیمات امنیتی"),
-        _buildOptionCard(Icons.api_rounded, "کلیدهای API والکس", "متصل شده"),
-        _buildOptionCard(Icons.security_rounded, "مدیریت ریسک هوشمند", "فعال"),
-        const SizedBox(height: 25),
-        _buildSectionTitle("اشتراک و توکن"),
-        _buildTokenStatus(),
-        const SizedBox(height: 25),
-        _buildLogoutBtn(),
-        const SizedBox(height: 100),
-      ],
-    );
-  }
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F172A),
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _api.getDashboardData(), // فراخوانی دیتای داشبورد
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) return Center(child: Text("خطا: ${snapshot.error}", style: const TextStyle(color: Colors.white)));
 
-  Widget _buildUserHeader() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: accentColor.withOpacity(0.1), borderRadius: BorderRadius.circular(24)),
-      child: Row(
-        children: [
-          CircleAvatar(radius: 30, backgroundColor: accentColor, child: const Icon(Icons.person, color: Colors.white, size: 30)),
-          const SizedBox(width: 15),
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text("کاربر کوانتوم", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-            Text("09123456789", style: TextStyle(color: textMuted, fontSize: 12)),
-          ]),
-        ],
+          // دیتاهای دریافت شده از API
+          final data = snapshot.data!;
+          final profile = data['profile'];
+          final config = data['config'];
+
+          // پر کردن کنترلرها فقط یکبار
+          if (_apiKeyController.text.isEmpty) {
+            _apiKeyController.text = config['api_key'] ?? "";
+            _phoneController.text = profile['phone_number'] ?? "";
+          }
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // کارت نمایش توکن
+                _buildInfoCard("موجودی توکن", "${profile['tokens_balance']}", Icons.wallet),
+                
+                const SizedBox(height: 20),
+                const Text("تنظیمات اتصال", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                
+                _buildTextField("کلید API", _apiKeyController),
+                _buildTextField("شماره همراه", _phoneController),
+                
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () async {
+                    var res = await _api.sendDashboardAction("update_config", extraData: {
+                      "api_key": _apiKeyController.text,
+                      "phone_number": _phoneController.text
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("با موفقیت ذخیره شد")));
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, minimumSize: const Size(double.infinity, 50)),
+                  child: const Text("ذخیره تنظیمات", style: TextStyle(color: Colors.white)),
+                ),
+
+                const SizedBox(height: 30),
+                const Text("خرید توکن", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                
+                // لیست دکمه‌های خرید
+                _buildPurchaseButton("بسته نقره‌ای (۱۰ توکن)", "pack_10"),
+                _buildPurchaseButton("بسته طلایی (۵۰ توکن)", "pack_50"),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Padding(padding: const EdgeInsets.only(bottom: 15, right: 5),
-      child: Text(title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-    );
-  }
-
-  Widget _buildOptionCard(IconData icon, String title, String status) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: bgCard, borderRadius: BorderRadius.circular(20)),
-      child: Row(children: [
-        Icon(icon, color: accentColor, size: 22),
-        const SizedBox(width: 15),
-        Expanded(child: Text(title, style: const TextStyle(color: Colors.white, fontSize: 14))),
-        Text(status, style: TextStyle(color: textMuted, fontSize: 12)),
-        const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white12, size: 14),
-      ]),
-    );
-  }
-
-  Widget _buildTokenStatus() {
+  // ویجت‌های کمکی برای زیبایی صفحه
+  Widget _buildInfoCard(String title, String value, IconData icon) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(gradient: LinearGradient(colors: [accentColor, const Color(0xFF1E40AF)]), borderRadius: BorderRadius.circular(24)),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text("موجودی فعلی", style: TextStyle(color: Colors.white70, fontSize: 12)),
-          Text("124 توکن", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+      decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(16)),
+      child: Row(children: [
+        Icon(icon, color: Colors.blue, size: 30),
+        const SizedBox(width: 15),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: const TextStyle(color: Colors.grey)),
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
         ]),
-        ElevatedButton(
-          onPressed: () {},
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: accentColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-          child: const Text("افزایش اعتبار"),
-        )
       ]),
     );
   }
 
-  Widget _buildLogoutBtn() {
-    return InkWell(
-      onTap: () {
-        Provider.of<AuthProvider>(context, listen: false).logout();
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(border: Border.all(color: Colors.redAccent.withOpacity(0.3)), borderRadius: BorderRadius.circular(20)),
-        child: const Center(child: Text("خروج از حساب کاربری", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold))),
+  Widget _buildTextField(String label, TextEditingController controller) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: TextField(
+        controller: controller,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(color: Colors.grey), border: const OutlineInputBorder()),
+      ),
+    );
+  }
+
+  Widget _buildPurchaseButton(String label, String packId) {
+    return Card(
+      color: const Color(0xFF1E293B),
+      child: ListTile(
+        title: Text(label, style: const TextStyle(color: Colors.white)),
+        trailing: const Icon(Icons.payment, color: Colors.green),
+        onTap: () async {
+          // اینجا اکشن خرید به API ارسال می‌شود
+          await _api.sendDashboardAction("buy_token", extraData: {"package": packId});
+          setState(() {}); // رفرش صفحه برای دیدن موجودی جدید
+        },
       ),
     );
   }
