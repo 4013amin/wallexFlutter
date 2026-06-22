@@ -135,7 +135,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     if (_data == null) return const Center(child: CircularProgressIndicator());
     return ProfileScreen(
       data: _data!, 
-      onRefresh: _refreshData // این باعث می‌شود بعد از هر تغییر، دیتای کل داشبورد آپدیت شود
+      onRefresh: _refreshData 
     ); 
   }
     

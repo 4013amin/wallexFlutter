@@ -27,7 +27,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _phoneController.text = widget.data['profile']?['phone_number'] ?? "";
   }
 
-  Future<void> _initiatePayment(String packageId) async {
+ Future<void> _initiatePayment(String packageId) async {
     setState(() => _processingPackageId = packageId);
     try {
       final res = await _api.sendDashboardAction(
@@ -35,16 +35,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
         extraData: {"package_id": packageId}
       );
       
-      if (res is Map && res.containsKey('payment_url')) {
+      // ۱. ابتدا چک کن که آیا پاسخ شامل ارور دست‌ساز جنگو هست یا نه
+      if (res.containsKey('error')) {
+        _showSnackBar(res['error'], isError: true);
+        return;
+      }
+
+      // ۲. بررسی وجود لینک پرداخت
+      if (res.containsKey('payment_url') && res['payment_url'] != null) {
         final Uri url = Uri.parse(res['payment_url']);
-        if (await canLaunchUrl(url)) {
+        
+        // استفاده از بلاک try-catch مستقیم برای لانچ کردن به جای شرط canLaunchUrl
+        try {
           await launchUrl(url, mode: LaunchMode.externalApplication);
+        } catch (launchError) {
+          _showSnackBar("مرورگری برای باز کردن درگاه پرداخت یافت نشد", isError: true);
         }
+        
       } else {
-        _showSnackBar(res['error'] ?? "خطا در ارتباط با درگاه", isError: true);
+        _showSnackBar("لینک پرداخت از سمت سرور دریافت نشد", isError: true);
       }
     } catch (e) {
-      _showSnackBar("خطای سیستم: ساختار نامعتبر از سرور", isError: true);
+      _showSnackBar("خطای غیرمنتظره در پردازش عملیات", isError: true);
       print("Flutter API Error: $e");
     } finally {
       setState(() => _processingPackageId = null);
