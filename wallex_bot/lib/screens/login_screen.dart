@@ -1,3 +1,5 @@
+// lib/screens/login_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -13,7 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
 
   Future<void> _handleLogin() async {
-    // اعتبارسنجی اولیه
+    // اعتبارسنجی اولیه فیلدها
     if (_userController.text.isEmpty || _passController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("لطفاً تمام فیلدها را پر کنید")),
@@ -34,9 +36,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (loginSuccess) {
       // اگر ورود موفق بود، برو به داشبورد
-      // (main.dart خودکار به داشبورد منتقل می‌شود)
+      // (main.dart به صورت خودکار تغییرات وضعیت را شنیده و کاربر را به داشبورد هدایت می‌کند)
     } else {
-      // نمایش پیام خطا
+      // نمایش پیام خطا در صورت ناموفق بودن لاگین روی سرور
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("نام کاربری یا رمز عبور اشتباه است یا سرور در دسترس نیست")),
       );
@@ -46,7 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFF0D1117), // تم تاریک
+      backgroundColor: Color(0xFF0D1117), // تم تاریک پلتفرم
       body: Center(
         child: SingleChildScrollView(
           padding: EdgeInsets.all(25.0),

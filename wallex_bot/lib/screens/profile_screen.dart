@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final Map<String, dynamic> data;
+  final VoidCallback onRefresh;
+
+  const ProfileScreen({super.key, required this.data, required this.onRefresh});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -10,113 +14,253 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final ApiService _api = ApiService();
-  
-  // کنترلرهای فرم برای ذخیره اطلاعات
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  
+  bool _isSaving = false;
+  String? _processingPackageId;
+
+  @override
+  void initState() {
+    super.initState();
+    _apiKeyController.text = widget.data['config']?['api_key'] ?? "";
+    _phoneController.text = widget.data['profile']?['phone_number'] ?? "";
+  }
+
+  Future<void> _initiatePayment(String packageId) async {
+    setState(() => _processingPackageId = packageId);
+    try {
+      final res = await _api.sendDashboardAction(
+        "get_payment_link", 
+        extraData: {"package_id": packageId}
+      );
+      
+      if (res is Map && res.containsKey('payment_url')) {
+        final Uri url = Uri.parse(res['payment_url']);
+        if (await canLaunchUrl(url)) {
+          await launchUrl(url, mode: LaunchMode.externalApplication);
+        }
+      } else {
+        _showSnackBar(res['error'] ?? "خطا در ارتباط با درگاه", isError: true);
+      }
+    } catch (e) {
+      _showSnackBar("خطای سیستم: ساختار نامعتبر از سرور", isError: true);
+      print("Flutter API Error: $e");
+    } finally {
+      setState(() => _processingPackageId = null);
+    }
+  }
+
+  void _saveSettings() async {
+    setState(() => _isSaving = true);
+    try {
+      await _api.sendDashboardAction("update_config", extraData: {
+        "api_key": _apiKeyController.text,
+        "phone_number": _phoneController.text
+      });
+      widget.onRefresh();
+      _showSnackBar("تنظیمات با موفقیت ذخیره شد");
+    } catch (e) {
+      _showSnackBar("خطا در ذخیره تنظیمات", isError: true);
+    }
+    setState(() => _isSaving = false);
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(fontFamily: 'Vazir')),
+        backgroundColor: isError ? Colors.redAccent : Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      body: FutureBuilder<Map<String, dynamic>>(
-        future: _api.getDashboardData(), // فراخوانی دیتای داشبورد
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) return Center(child: Text("خطا: ${snapshot.error}", style: const TextStyle(color: Colors.white)));
+    // جلوگیری از کرش کردن در صورت خالی بودن دیتا
+    final profile = widget.data['profile'] ?? {};
+    final tokens = (profile['tokens_balance'] ?? 0).toString();
 
-          // دیتاهای دریافت شده از API
-          final data = snapshot.data!;
-          final profile = data['profile'];
-          final config = data['config'];
+    // استفاده از Material به جای Container برای رفع خطای RenderBox
+    return Material(
+      color: const Color(0xFF0D1117), // رنگ پس‌زمینه دارک و مدرن
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 20),
+              
+              // کارت موجودی توکن
+              _buildTokenBalanceCard(tokens),
+              
+              const SizedBox(height: 30),
+              
+              // بخش تنظیمات کاربری
+              const Text("تنظیمات کاربری", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 15),
+              _buildModernInput("API Key صرافی", _apiKeyController, Icons.vpn_key_rounded),
+              _buildModernInput("شماره همراه", _phoneController, Icons.phone_android_rounded),
+              
+              const SizedBox(height: 10),
+              _buildSaveButton(),
 
-          // پر کردن کنترلرها فقط یکبار
-          if (_apiKeyController.text.isEmpty) {
-            _apiKeyController.text = config['api_key'] ?? "";
-            _phoneController.text = profile['phone_number'] ?? "";
-          }
+              const SizedBox(height: 40),
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // کارت نمایش توکن
-                _buildInfoCard("موجودی توکن", "${profile['tokens_balance']}", Icons.wallet),
-                
-                const SizedBox(height: 20),
-                const Text("تنظیمات اتصال", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                
-                _buildTextField("کلید API", _apiKeyController),
-                _buildTextField("شماره همراه", _phoneController),
-                
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: () async {
-                    var res = await _api.sendDashboardAction("update_config", extraData: {
-                      "api_key": _apiKeyController.text,
-                      "phone_number": _phoneController.text
-                    });
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("با موفقیت ذخیره شد")));
-                  },
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, minimumSize: const Size(double.infinity, 50)),
-                  child: const Text("ذخیره تنظیمات", style: TextStyle(color: Colors.white)),
-                ),
-
-                const SizedBox(height: 30),
-                const Text("خرید توکن", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                
-                // لیست دکمه‌های خرید
-                _buildPurchaseButton("بسته نقره‌ای (۱۰ توکن)", "pack_10"),
-                _buildPurchaseButton("بسته طلایی (۵۰ توکن)", "pack_50"),
-              ],
-            ),
-          );
-        },
+              // بخش فروشگاه توکن
+              const Text("تهیه اشتراک توکن", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 15),
+              
+              _buildPackageCard("بسته نقره‌ای", "10", "50,000", "pack_10", [Colors.grey.shade400, Colors.grey.shade600]),
+              _buildPackageCard("بسته طلایی", "50", "200,000", "pack_50", [Colors.orange.shade300, Colors.orange.shade600]),
+              _buildPackageCard("بسته پلاتینیوم", "100", "350,000", "pack_100", [Colors.blue.shade300, Colors.purple.shade500]),
+              
+              const SizedBox(height: 80), // جلوگیری از گیر کردن محتوا زیر نویگیشن بار
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  // ویجت‌های کمکی برای زیبایی صفحه
-  Widget _buildInfoCard(String title, String value, IconData icon) {
+  // --- ویجت‌های زیباسازی شده ---
+
+  Widget _buildTokenBalanceCard(String balance) {
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(16)),
-      child: Row(children: [
-        Icon(icon, color: Colors.blue, size: 30),
-        const SizedBox(width: 15),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: const TextStyle(color: Colors.grey)),
-          Text(value, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-        ]),
-      ]),
+      width: double.infinity,
+      padding: const EdgeInsets.all(25),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade800, Colors.blue.shade500],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(25),
+        boxShadow: [
+          BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10)),
+        ],
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.monetization_on_rounded, color: Colors.white70, size: 40),
+          const SizedBox(height: 10),
+          const Text("موجودی توکن‌های شما", style: TextStyle(color: Colors.white70, fontSize: 14)),
+          const SizedBox(height: 5),
+          Text(balance, style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 
-  Widget _buildTextField(String label, TextEditingController controller) {
+  Widget _buildModernInput(String hint, TextEditingController controller, IconData icon) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(bottom: 15),
       child: TextField(
         controller: controller,
         style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(color: Colors.grey), border: const OutlineInputBorder()),
+        decoration: InputDecoration(
+          prefixIcon: Icon(icon, color: Colors.blueAccent),
+          hintText: hint,
+          hintStyle: const TextStyle(color: Colors.white38),
+          filled: true,
+          fillColor: const Color(0xFF161B22),
+          contentPadding: const EdgeInsets.symmetric(vertical: 18),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildPurchaseButton(String label, String packId) {
-    return Card(
-      color: const Color(0xFF1E293B),
-      child: ListTile(
-        title: Text(label, style: const TextStyle(color: Colors.white)),
-        trailing: const Icon(Icons.payment, color: Colors.green),
-        onTap: () async {
-          // اینجا اکشن خرید به API ارسال می‌شود
-          await _api.sendDashboardAction("buy_token", extraData: {"package": packId});
-          setState(() {}); // رفرش صفحه برای دیدن موجودی جدید
-        },
+  Widget _buildSaveButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 55,
+      child: ElevatedButton(
+        onPressed: _isSaving ? null : _saveSettings,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.blueAccent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          elevation: 0,
+        ),
+        child: _isSaving 
+          ? const SizedBox(width: 25, height: 25, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+          : const Text("ذخیره تغییرات", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+      ),
+    );
+  }
+
+  Widget _buildPackageCard(String title, String tokens, String price, String packId, List<Color> gradientColors) {
+    bool isProcessing = _processingPackageId == packId;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 15),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161B22),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            // آیکون پکیج
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: gradientColors),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.diamond_rounded, color: Colors.white, size: 24),
+            ),
+            const SizedBox(width: 15),
+            
+            // متون
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text("$tokens توکن پردازشی", style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                ],
+              ),
+            ),
+
+            // دکمه و قیمت
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text("$price تومان", style: const TextStyle(color: Colors.greenAccent, fontSize: 14, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: isProcessing ? null : () => _initiatePayment(packId),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isProcessing ? Colors.grey.withOpacity(0.2) : Colors.blueAccent.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: isProcessing
+                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent))
+                        : const Text("خرید", style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+                  ),
+                )
+              ],
+            )
+          ],
+        ),
       ),
     );
   }

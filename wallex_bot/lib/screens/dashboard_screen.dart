@@ -131,7 +131,13 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
 
   Widget _buildBodyContent() {
     if (_selectedIndex == 1) return _buildSignalsRadar();
-    if (_selectedIndex == 2) return ProfileScreen();
+    if (_selectedIndex == 2) {
+    if (_data == null) return const Center(child: CircularProgressIndicator());
+    return ProfileScreen(
+      data: _data!, 
+      onRefresh: _refreshData // این باعث می‌شود بعد از هر تغییر، دیتای کل داشبورد آپدیت شود
+    ); 
+  }
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

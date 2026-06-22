@@ -1,7 +1,11 @@
+// lib/providers/auth_provider.dart
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart'; // حتماً سرویس خود را اینجا ایمپورت کنید
 
 class AuthProvider with ChangeNotifier {
+  final ApiService _apiService = ApiService(); // ساخت نمونه از ApiService
   String? _token;
   bool _isLoading = true;
 
@@ -15,31 +19,41 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.containsKey('user_token')) {
-      _token = prefs.getString('user_token');
+    // هماهنگ‌سازی کلید با ApiService (تغییر به 'token')
+    if (prefs.containsKey('token')) {
+      _token = prefs.getString('token');
     }
 
     _isLoading = false;
     notifyListeners();
   }
 
-  // متد لاگین
+  // متد لاگین واقعی و متصل به سرور جنگو
   Future<bool> login(String username, String password) async {
-    // اینجا کدهای API خودت رو بزن
-    // اگر موفق بود:
-    _token = "TOKEN_FROM_SERVER"; // توکن واقعی را اینجا بگذار
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_token', _token!);
+    // فراخوانی متد لاگین واقعی از ApiService
+    final serverToken = await _apiService.login(username, password);
     
-    notifyListeners();
-    return true;
+    if (serverToken != null && serverToken.isNotEmpty) {
+      _token = serverToken;
+      
+      // ذخیره توکن با کلید هماهنگ 'token'
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', _token!);
+      
+      notifyListeners();
+      return true; 
+    } else {
+      _token = null;
+      notifyListeners();
+      return false; // ورود ناموفق
+    }
   }
 
-  // متد خروج
+  // متد خروج واقعی
   Future<void> logout() async {
     _token = null;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('user_token'); // حذف توکن از حافظه گوشی
-    notifyListeners(); // با این کار، Main متوجه شده و کاربر را به لاگین می‌برد
+    await prefs.remove('token'); // حذف توکن با کلید درست
+    notifyListeners();
   }
 }
