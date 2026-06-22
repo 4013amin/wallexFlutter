@@ -1,11 +1,10 @@
 // lib/providers/auth_provider.dart
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/api_service.dart'; // حتماً سرویس خود را اینجا ایمپورت کنید
+import '../services/api_service.dart'; 
 
 class AuthProvider with ChangeNotifier {
-  final ApiService _apiService = ApiService(); // ساخت نمونه از ApiService
+  final ApiService _apiService = ApiService(); 
   String? _token;
   bool _isLoading = true;
 
@@ -13,7 +12,6 @@ class AuthProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get token => _token;
 
-  // چک کردن وضعیت ورود هنگام باز شدن اپلیکیشن
   Future<void> checkAuthStatus() async {
     _isLoading = true;
     notifyListeners();
@@ -36,7 +34,6 @@ class AuthProvider with ChangeNotifier {
     if (serverToken != null && serverToken.isNotEmpty) {
       _token = serverToken;
       
-      // ذخیره توکن با کلید هماهنگ 'token'
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('token', _token!);
       
@@ -45,7 +42,7 @@ class AuthProvider with ChangeNotifier {
     } else {
       _token = null;
       notifyListeners();
-      return false; // ورود ناموفق
+      return false; 
     }
   }
 
