@@ -6,6 +6,14 @@ class DataProvider extends ChangeNotifier {
   Map<String, dynamic>? _dashboardData;
   List<dynamic> _signals = [];
   bool _isLoading = true;
+  
+  // Cache SharedPreferences برای سرعت بیشتر
+  static SharedPreferences? _prefs;
+  
+  Future<SharedPreferences> _getPrefs() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    return _prefs!;
+  }
 
   // Getters
   Map<String, dynamic>? get dashboardData => _dashboardData;
@@ -15,7 +23,7 @@ class DataProvider extends ChangeNotifier {
   // بارگیری داده‌های ذخیره‌شده
   Future<void> loadCachedData() async {
     try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       
       String? cachedData = prefs.getString('dashboard_data');
       if (cachedData != null) {
@@ -37,7 +45,7 @@ class DataProvider extends ChangeNotifier {
   // ذخیره داده‌های داشبورد
   Future<void> saveDashboardData(Map<String, dynamic> data) async {
     try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       _dashboardData = data;
       await prefs.setString('dashboard_data', jsonEncode(data));
       notifyListeners();
@@ -49,7 +57,7 @@ class DataProvider extends ChangeNotifier {
   // ذخیره سیگنال‌ها
   Future<void> saveSignals(List<dynamic> signals) async {
     try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       _signals = signals;
       await prefs.setString('signals', jsonEncode(signals));
       notifyListeners();
@@ -73,7 +81,7 @@ class DataProvider extends ChangeNotifier {
   // پاک کردن همه داده‌ها
   Future<void> clearCachedData() async {
     try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       await prefs.remove('dashboard_data');
       await prefs.remove('signals');
       _dashboardData = null;

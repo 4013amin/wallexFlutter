@@ -7,6 +7,14 @@ class AuthProvider with ChangeNotifier {
   final ApiService _apiService = ApiService(); 
   String? _token;
   bool _isLoading = true;
+  
+  // Cache SharedPreferences برای سرعت بیشتر
+  static SharedPreferences? _prefs;
+  
+  Future<SharedPreferences> _getPrefs() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    return _prefs!;
+  }
 
   bool get isAuthenticated => _token != null;
   bool get isLoading => _isLoading;
@@ -16,7 +24,7 @@ class AuthProvider with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     // هماهنگ‌سازی کلید با ApiService (تغییر به 'token')
     if (prefs.containsKey('token')) {
       _token = prefs.getString('token');
@@ -34,7 +42,7 @@ class AuthProvider with ChangeNotifier {
     if (serverToken != null && serverToken.isNotEmpty) {
       _token = serverToken;
       
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       await prefs.setString('token', _token!);
       
       notifyListeners();
@@ -49,7 +57,7 @@ class AuthProvider with ChangeNotifier {
   // متد خروج واقعی
   Future<void> logout() async {
     _token = null;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.remove('token'); // حذف توکن با کلید درست
     notifyListeners();
   }

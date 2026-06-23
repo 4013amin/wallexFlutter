@@ -161,26 +161,20 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       margin: const EdgeInsets.fromLTRB(24, 0, 24, 30),
       height: 70,
       decoration: BoxDecoration(
-        color: bgCard.withOpacity(0.8),
+        color: bgCard,
         borderRadius: BorderRadius.circular(25),
         border: Border.all(color: Colors.white.withOpacity(0.1)),
         boxShadow: [
           BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(25),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _navItem(0, Icons.grid_view_rounded, "خانه"),
-              _navItem(1, Icons.radar_rounded, "رادار"),
-              _navItem(2, Icons.person_2_rounded, "پروفایل"),
-            ],
-          ),
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _navItem(0, Icons.grid_view_rounded, "خانه"),
+          _navItem(1, Icons.radar_rounded, "رادار"),
+          _navItem(2, Icons.person_2_rounded, "پروفایل"),
+        ],
       ),
     );
   }
@@ -384,7 +378,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   Widget _coinCircle(String sym, Color c) => Container(width: 40, height: 40, decoration: BoxDecoration(color: c.withOpacity(0.1), shape: BoxShape.circle), child: Center(child: Text(sym[0], style: TextStyle(color: c, fontWeight: FontWeight.bold))));
   Widget _emptyState(String m) => Center(child: Padding(padding: const EdgeInsets.all(30), child: Text(m, style: TextStyle(color: textMuted, fontSize: 12))));
   Widget _buildSectionHeader(String t, IconData i) => Padding(padding: const EdgeInsets.only(bottom: 15), child: Row(children: [Icon(i, color: accentColor, size: 20), const SizedBox(width: 10), Text(t, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))]));
-  Widget _buildLoadingOverlay() => BackdropFilter(filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5), child: Container(color: Colors.black54, child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(color: accentColor), const SizedBox(height: 20), Text("در حال اسکن بازار...", style: TextStyle(color: textMain))]))));
+  Widget _buildLoadingOverlay() => Container(color: Colors.black54, child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const CircularProgressIndicator(color: Color(0xFF3B82F6)), const SizedBox(height: 20), Text("در حال اسکن بازار...", style: const TextStyle(color: Color(0xFFF3F4F6)))])));
 
   Widget _buildStatusDot() {
     bool isActive = _data?['config']?['is_active'] ?? false;
@@ -404,8 +398,13 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       child: Container(
         width: 300,
         height: 300,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: accentColor.withOpacity(0.05)),
-        child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100), child: Container(color: Colors.transparent)),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [accentColor.withOpacity(0.05), Colors.transparent],
+            stops: const [0.0, 1.0],
+          ),
+        ),
       ),
     );
   }
@@ -424,11 +423,11 @@ class __PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMix
   late AnimationController _c;
   @override
   void initState() {
-    _c = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat(reverse: true);
+    _c = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     super.initState();
   }
   @override
-  Widget build(BuildContext context) => FadeTransition(opacity: _c, child: Container(width: 8, height: 8, decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle, boxShadow: [BoxShadow(color: widget.color, blurRadius: 6)])));
+  Widget build(BuildContext context) => FadeTransition(opacity: _c, child: Container(width: 8, height: 8, decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle)));
   @override
   void dispose() { _c.dispose(); super.dispose(); }
 }
@@ -438,10 +437,5 @@ class _FadeInSlide extends StatelessWidget {
   final int delay;
   const _FadeInSlide({required this.child, required this.delay});
   @override
-  Widget build(BuildContext context) => TweenAnimationBuilder(
-    tween: Tween<double>(begin: 0, end: 1), 
-    duration: const Duration(milliseconds: 500), 
-    builder: (context, double v, child) => Opacity(opacity: v, child: Transform.translate(offset: Offset(0, 20 * (1 - v)), child: child)), 
-    child: child
-  );
+  Widget build(BuildContext context) => child;
 }

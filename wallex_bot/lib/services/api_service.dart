@@ -5,31 +5,43 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = "http://192.168.1.109:8000/api";
+  static const String baseUrl = "http://192.168.1.109:8000/api/";
+  static const Duration _timeout = Duration(seconds: 15);
+  
+  // HTTP client با connection pooling برای سرعت بیشتر
+  static final _client = http.Client();
+  
+  // Cache SharedPreferences برای جلوگیری از getInstance مکرر
+  static SharedPreferences? _prefs;
+  
+  Future<SharedPreferences> _getPrefs() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    return _prefs!;
+  }
 
   Future<String?> _getToken() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     return prefs.getString('token');
   }
 
   Future<void> _saveToken(String token) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.setString('token', token);
   }
 
   // متد لاگین بهینه‌سازی شده با ارسال داده به صورت JSON استاندارد
   Future<String?> login(String username, String password) async {
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse("$baseUrl/login/"),
         headers: {
-          "Content-Type": "application/json", // تغییر به JSON برای سازگاری کامل با جنگو
+          "Content-Type": "application/json",
         },
         body: json.encode({
           "username": username,
           "password": password,
         }),
-      );
+      ).timeout(_timeout);
 
       if (response.statusCode == 200) {
         final data = json.decode(utf8.decode(response.bodyBytes));
@@ -51,13 +63,13 @@ class ApiService {
   // دریافت اطلاعات اصلی داشبورد
   Future<Map<String, dynamic>> getDashboardData() async {
     String? token = await _getToken();
-    var res = await http.get(
+    var res = await _client.get(
       Uri.parse("$baseUrl/dashboard/"), 
       headers: {
         "Authorization": "Token $token", 
         "Content-Type": "application/json"
       },
-    );
+    ).timeout(_timeout);
     return json.decode(utf8.decode(res.bodyBytes));
   }
 
@@ -74,14 +86,14 @@ class ApiService {
       });
     }
 
-    var res = await http.post(
+    var res = await _client.post(
       Uri.parse("$baseUrl/dashboard/"),
       headers: {
         "Authorization": "Token $token", 
         "Content-Type": "application/json"
       },
       body: json.encode(body),
-    ).timeout(const Duration(seconds: 20));
+    ).timeout(_timeout);
     
     final decodedData = json.decode(utf8.decode(res.bodyBytes));
 
@@ -107,19 +119,19 @@ class ApiService {
   // متد آنالیز
   Future<Map<String, dynamic>> getCoinAnalysis(String symbol) async {
     String? token = await _getToken();
-    var res = await http.get(
+    var res = await _client.get(
       Uri.parse("$baseUrl/analysis/$symbol/"),
       headers: {
         "Authorization": "Token $token",
         "Content-Type": "application/json"
       },
-    );
+    ).timeout(_timeout);
     
     return json.decode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
   Future<void> logout() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.clear();
   }
 }

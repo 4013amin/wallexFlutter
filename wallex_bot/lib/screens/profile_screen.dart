@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:async'; // اضافه شدن برای تایمر ذخیره خودکار
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -22,10 +23,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late TextEditingController _stopLossController;
   late TextEditingController _takeProfitController;
 
-  bool _isSaving = false;
+  Timer? _debounce; // تایمر برای جلوگیری از ارسال رگباری درخواست به سرور
   bool _isDemoCharging = false;
   bool _isPaperTrading = true;
   String? _processingPackageId;
+  bool _isUserTyping = false; // برای جلوگیری از آپدیت controllers هنگام تایپ کاربر
 
   // پالت رنگی
   final Color _bgColor = const Color(0xFF0B1120);
@@ -70,6 +72,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _updateControllers() {
+    // اگر کاربر در حال تایپ است، controllers را آپدیت نکن تا دیتا قاطی نشود
+    if (_isUserTyping) return;
+    
     final config = widget.data['config'] ?? {};
     final profile = widget.data['profile'] ?? {};
 
@@ -101,6 +106,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _apiKeyController.dispose();
     _phoneController.dispose();
     _maxInvestmentController.dispose();
@@ -111,10 +117,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // ==================== توابع API ====================
 
+  // ذخیره خودکار تنظیمات با وقفه ۱.۲ ثانیه‌ای (Debounce)
+  void _autoSaveSettings() {
+    _isUserTyping = true;
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 1200), () async {
+      try {
+        double maxInv = double.tryParse(_maxInvestmentController.text) ?? 0;
+        double stopLoss = double.tryParse(_stopLossController.text) ?? 1.5;
+        double takeProfit = double.tryParse(_takeProfitController.text) ?? 3.0;
+
+        final res = await _api.sendDashboardAction("update_config", extraData: {
+          "api_key": _apiKeyController.text,
+          "phone_number": _phoneController.text,
+          "is_paper": _isPaperTrading,
+          "max_investment": maxInv,
+          "stop_loss": stopLoss,
+          "take_profit": takeProfit,
+        }).timeout(const Duration(seconds: 10));
+
+        if (!mounted) return;
+        _isUserTyping = false;
+
+        if (res.containsKey('error')) {
+          _showSnackBar(res['error'], isError: true);
+        } else {
+          // در ذخیره خودکار معمولا پیغام موفقیت نشان نمی‌دهند تا کاربر اذیت نشود، 
+          // اما رفرش را صدا میزنیم که در استیت اصلی ثبت شود
+          widget.onRefresh();
+        }
+      } catch (e) {
+        if (mounted) {
+          _isUserTyping = false;
+          _showSnackBar("خطا در ارتباط با سرور هنگام ذخیره خودکار", isError: true);
+        }
+      }
+    });
+  }
+
   Future<void> _initiatePayment(String packageId) async {
     setState(() => _processingPackageId = packageId);
     try {
-      final res = await _api.sendDashboardAction("get_payment_link", extraData: {"package_id": packageId});
+      final res = await _api.sendDashboardAction("get_payment_link", extraData: {"package_id": packageId}).timeout(const Duration(seconds: 10));
       if (!mounted) return;
 
       if (res.containsKey('error')) {
@@ -132,41 +176,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _saveSettings() async {
-    setState(() => _isSaving = true);
-    try {
-      double maxInv = double.tryParse(_maxInvestmentController.text) ?? 0;
-      double stopLoss = double.tryParse(_stopLossController.text) ?? 1.5;
-      double takeProfit = double.tryParse(_takeProfitController.text) ?? 3.0;
-
-      final res = await _api.sendDashboardAction("update_config", extraData: {
-        "api_key": _apiKeyController.text,
-        "phone_number": _phoneController.text,
-        "is_paper": _isPaperTrading,
-        "max_investment": maxInv,
-        "stop_loss": stopLoss,
-        "take_profit": takeProfit,
-      });
-
-      if (!mounted) return;
-
-      if (res.containsKey('error')) {
-        _showSnackBar(res['error'], isError: true);
-      } else {
-        _showSnackBar("تنظیمات با موفقیت ذخیره شد", isSuccess: true);
-        widget.onRefresh();
-      }
-    } catch (e) {
-      if (mounted) _showSnackBar("خطا در ارتباط با سرور", isError: true);
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
   void _chargeDemo() async {
     setState(() => _isDemoCharging = true);
     try {
-      final res = await _api.sendDashboardAction("charge_demo");
+      final res = await _api.sendDashboardAction("charge_demo").timeout(const Duration(seconds: 10));
       if (!mounted) return;
       if (res.containsKey('error')) {
         _showSnackBar(res['error'], isError: true);
@@ -201,7 +214,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         backgroundColor: isError ? _sellColor : (isSuccess ? _buyColor : _accentColor),
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.only(left: 16, right: 16, bottom: 100),
+        margin: const EdgeInsets.only(left: 16, right: 16, bottom: 20),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         elevation: 10,
       ),
@@ -218,10 +231,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // جلوگیری از خطای سایزینگ در صورتی که والد صفحه ارتفاع نامحدود ارسال کند
         double availableHeight = constraints.maxHeight;
         if (availableHeight == double.infinity) {
-          availableHeight = MediaQuery.of(context).size.height; // جایگزینی با ارتفاع واقعی صفحه
+          availableHeight = MediaQuery.of(context).size.height;
         }
 
         return SizedBox(
@@ -232,48 +244,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
               textDirection: TextDirection.rtl,
               child: SafeArea(
                 bottom: false,
-                child: Stack(
-                  children: [
-                    // محتوای اصلی
-                    SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 180),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildHeaderTitle(),
-                          const SizedBox(height: 24),
-                          _buildTokenBalanceCard(tokens),
-                          const SizedBox(height: 32),
-                          _buildSectionTitle("تنظیمات اتصال و استراتژی", Icons.settings_input_component_rounded),
-                          const SizedBox(height: 12),
-                          _buildExchangeCard(),
-                          const SizedBox(height: 20),
-                          _buildRiskManagementCard(),
-                          const SizedBox(height: 20),
-                          _buildSmsAlertCard(),
-                          const SizedBox(height: 36),
-                          _buildSectionTitle("فروشگاه توکن", Icons.store_rounded),
-                          const SizedBox(height: 12),
-                          _buildShopSection(),
-                          const SizedBox(height: 36),
-                          _buildSectionTitle("امور مالی", Icons.account_balance_wallet_rounded),
-                          const SizedBox(height: 12),
-                          _buildTransactionHistory(transactions),
-                          const SizedBox(height: 24),
-                          _buildDemoChargeCard(),
-                        ],
-                      ),
-                    ),
-
-                    // دکمه ذخیره شناور
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: _buildFloatingSaveButton(),
-                    ),
-                  ],
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 40), // پدینگ پایین کم شد چون دکمه حذف شد
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeaderTitle(),
+                      const SizedBox(height: 24),
+                      _buildTokenBalanceCard(tokens),
+                      const SizedBox(height: 32),
+                      _buildSectionTitle("تنظیمات اتصال و استراتژی", Icons.settings_input_component_rounded),
+                      const SizedBox(height: 12),
+                      _buildExchangeCard(),
+                      const SizedBox(height: 20),
+                      _buildRiskManagementCard(),
+                      const SizedBox(height: 20),
+                      _buildSmsAlertCard(),
+                      const SizedBox(height: 36),
+                      _buildSectionTitle("فروشگاه توکن", Icons.store_rounded),
+                      const SizedBox(height: 12),
+                      _buildShopSection(),
+                      const SizedBox(height: 36),
+                      _buildSectionTitle("امور مالی", Icons.account_balance_wallet_rounded),
+                      const SizedBox(height: 12),
+                      _buildTransactionHistory(transactions),
+                      const SizedBox(height: 24),
+                      _buildDemoChargeCard(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -700,6 +699,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }) {
     return TextField(
       controller: controller,
+      onChanged: (value) => _autoSaveSettings(), // اضافه شدن فراخوانی اتوسیو با هر تغییر کاربر
       style: TextStyle(
         color: Colors.white,
         fontFamily: isLtr ? 'monospace' : 'Vazir',
@@ -738,7 +738,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           isExpanded: true,
           style: const TextStyle(color: Colors.white, fontFamily: 'Vazir', fontSize: 13, fontWeight: FontWeight.w600),
           onChanged: (bool? newValue) {
-            if (newValue != null) setState(() => _isPaperTrading = newValue);
+            if (newValue != null) {
+              setState(() => _isPaperTrading = newValue);
+              _autoSaveSettings(); // با انتخاب از لیست، درجا ذخیره می‌شود
+            }
           },
           items: [
             DropdownMenuItem(
@@ -762,52 +765,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFloatingSaveButton() {
-    return ClipRRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 16,
-            bottom: MediaQuery.of(context).padding.bottom + 16,
-          ),
-          decoration: BoxDecoration(
-            color: _bgColor.withOpacity(0.92),
-            border: Border(top: BorderSide(color: _borderColor.withOpacity(0.5))),
-          ),
-          child: SizedBox(
-            width: double.infinity,
-            height: 54,
-            child: ElevatedButton(
-              onPressed: _isSaving ? null : _saveSettings,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _accentColor,
-                shadowColor: _accentColor.withOpacity(0.6),
-                elevation: 10,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-              child: _isSaving
-                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                  : const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.save_rounded, size: 22, color: Colors.white),
-                        SizedBox(width: 10),
-                        Text(
-                          "ذخیره تنظیمات",
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Vazir'),
-                        ),
-                      ],
-                    ),
-            ),
-          ),
         ),
       ),
     );
