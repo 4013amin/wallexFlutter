@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 
 class AnalysisScreen extends StatefulWidget {
@@ -25,6 +27,14 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   late TextEditingController _slController, _tpController, _entryController;
   Map<String, dynamic>? _analysisData;
   bool _isLoading = true;
+  static SharedPreferences? _prefs;
+  
+  static const Duration _cacheExpiry = Duration(minutes: 10);
+  
+  Future<SharedPreferences> _getPrefs() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    return _prefs!;
+  }
 
   @override
   void initState() {
@@ -37,8 +47,40 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
   Future<void> _loadData() async {
     try {
+      // Try to load from cache first
+      final prefs = await _getPrefs();
+      final cacheKey = 'analysis_${widget.symbol}';
+      final cacheData = prefs.getString(cacheKey);
+      final cacheTime = prefs.getString('${cacheKey}_time');
+      
+      // Check if cache is valid
+      bool useCache = false;
+      if (cacheData != null && cacheTime != null) {
+        final cachedTime = DateTime.parse(cacheTime);
+        if (DateTime.now().difference(cachedTime) < _cacheExpiry) {
+          useCache = true;
+        }
+      }
+      
+      if (useCache && mounted && cacheData != null) {
+        final data = jsonDecode(cacheData);
+        setState(() {
+          _analysisData = data;
+          _entryController.text = data?['current_price']?.toString() ?? '0';
+          _slController.text = data?['sl_price']?.toString() ?? '';
+          _tpController.text = data?['tp_price']?.toString() ?? '';
+          _isLoading = false;
+        });
+      }
+      
+      // Fetch fresh data in background
       final response = await _api.getCoinAnalysis(widget.symbol);
       final data = response['analysis'];
+      
+      // Save to cache
+      await prefs.setString(cacheKey, jsonEncode(data));
+      await prefs.setString('${cacheKey}_time', DateTime.now().toIso8601String());
+      
       if (mounted) {
         setState(() {
           _analysisData = data;

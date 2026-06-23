@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shimmer/shimmer.dart';
 import 'dart:ui';
 import '../services/api_service.dart';
 import '../providers/data_provider.dart';
@@ -85,6 +86,9 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             _data!['profile']['tokens_balance'] = res['remaining_tokens'];
           }
         });
+        
+        // Automatically switch to radar tab to show results
+        setState(() => _selectedIndex = 1);
       }
     } finally {
       if (mounted) setState(() => _isScanning = false);
@@ -228,8 +232,10 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       children: [
         const SizedBox(height: 20),
         _buildSectionHeader("رادار فرصت‌های معاملاتی", Icons.radar_outlined),
-        if (_currentSignals.isEmpty) 
+        if (_currentSignals.isEmpty && !_isScanning) 
           _emptyState("دیتای ذخیره شده‌ای یافت نشد. اسکن کنید.")
+        else if (_isScanning)
+          _buildShimmerSignals()
         else 
           Column(
             children: _currentSignals.map((s) => _FadeInSlide(delay: 50, child: _signalCard(s))).toList().cast<Widget>()
@@ -241,24 +247,62 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
 
   Widget _signalCard(Map s) {
     bool isBuy = s['side'] == "BUY";
-    return InkWell(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AnalysisScreen(symbol: s['symbol']))),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: bgCard, 
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: (isBuy ? buyColor : sellColor).withOpacity(0.1))
-        ),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bgCard, 
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: (isBuy ? buyColor : sellColor).withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: (isBuy ? buyColor : sellColor).withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: InkWell(
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AnalysisScreen(symbol: s['symbol']))),
+        borderRadius: BorderRadius.circular(20),
         child: Row(children: [
             _coinCircle(s['symbol'], isBuy ? buyColor : sellColor),
             const SizedBox(width: 15),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(s['symbol'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  Text("قیمت: ${s['price']}", style: TextStyle(color: textMuted, fontSize: 11)),
+                  Row(
+                    children: [
+                      Text(s['symbol'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: (isBuy ? buyColor : sellColor).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          isBuy ? "خرید" : "فروش",
+                          style: TextStyle(color: isBuy ? buyColor : sellColor, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text("قیمت: ", style: TextStyle(color: textMuted, fontSize: 11)),
+                      Text(s['price']?.toString() ?? 'N/A', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
             ])),
-            Icon(Icons.arrow_forward_ios_rounded, color: textMuted, size: 14),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: accentColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.arrow_forward_ios_rounded, color: accentColor, size: 14),
+            ),
         ]),
       ),
     );
@@ -376,9 +420,58 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   }
 
   Widget _coinCircle(String sym, Color c) => Container(width: 40, height: 40, decoration: BoxDecoration(color: c.withOpacity(0.1), shape: BoxShape.circle), child: Center(child: Text(sym[0], style: TextStyle(color: c, fontWeight: FontWeight.bold))));
+
+  Widget _buildShimmerSignals() {
+    return Column(
+      children: List.generate(3, (index) => 
+        Shimmer.fromColors(
+          baseColor: bgCard,
+          highlightColor: Colors.white.withOpacity(0.05),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: bgCard,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(children: [
+              Container(width: 40, height: 40, decoration: BoxDecoration(color: Colors.white10, shape: BoxShape.circle)),
+              const SizedBox(width: 15),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Container(width: 80, height: 16, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(4))),
+                const SizedBox(height: 8),
+                Container(width: 60, height: 12, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(4))),
+              ])),
+              Container(width: 24, height: 24, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8))),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
   Widget _emptyState(String m) => Center(child: Padding(padding: const EdgeInsets.all(30), child: Text(m, style: TextStyle(color: textMuted, fontSize: 12))));
   Widget _buildSectionHeader(String t, IconData i) => Padding(padding: const EdgeInsets.only(bottom: 15), child: Row(children: [Icon(i, color: accentColor, size: 20), const SizedBox(width: 10), Text(t, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))]));
-  Widget _buildLoadingOverlay() => Container(color: Colors.black54, child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const CircularProgressIndicator(color: Color(0xFF3B82F6)), const SizedBox(height: 20), Text("در حال اسکن بازار...", style: const TextStyle(color: Color(0xFFF3F4F6)))])));
+  Widget _buildLoadingOverlay() => Container(
+    color: Colors.black54,
+    child: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(color: Color(0xFF3B82F6), strokeWidth: 3),
+          const SizedBox(height: 20),
+          Text(
+            "در حال اسکن بازار...",
+            style: const TextStyle(color: Color(0xFFF3F4F6), fontSize: 16, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "در حال تحلیل فرصت‌های معاملاتی",
+            style: TextStyle(color: textMuted, fontSize: 12),
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget _buildStatusDot() {
     bool isActive = _data?['config']?['is_active'] ?? false;

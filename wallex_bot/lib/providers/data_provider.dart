@@ -10,6 +10,10 @@ class DataProvider extends ChangeNotifier {
   // Cache SharedPreferences برای سرعت بیشتر
   static SharedPreferences? _prefs;
   
+  // Cache expiration (5 minutes)
+  static const Duration _cacheExpiry = Duration(minutes: 5);
+  DateTime? _lastDataUpdate;
+  
   Future<SharedPreferences> _getPrefs() async {
     _prefs ??= await SharedPreferences.getInstance();
     return _prefs!;
@@ -19,6 +23,8 @@ class DataProvider extends ChangeNotifier {
   Map<String, dynamic>? get dashboardData => _dashboardData;
   List<dynamic> get signals => _signals;
   bool get isLoading => _isLoading;
+  bool get isCacheExpired => _lastDataUpdate == null || 
+      DateTime.now().difference(_lastDataUpdate!) > _cacheExpiry;
 
   // بارگیری داده‌های ذخیره‌شده
   Future<void> loadCachedData() async {
@@ -34,6 +40,11 @@ class DataProvider extends ChangeNotifier {
       if (cachedSignals != null) {
         _signals = jsonDecode(cachedSignals);
       }
+
+      String? lastUpdateStr = prefs.getString('last_data_update');
+      if (lastUpdateStr != null) {
+        _lastDataUpdate = DateTime.parse(lastUpdateStr);
+      }
     } catch (e) {
       print('[DataProvider] Error loading cached data: $e');
     } finally {
@@ -47,7 +58,9 @@ class DataProvider extends ChangeNotifier {
     try {
       final prefs = await _getPrefs();
       _dashboardData = data;
+      _lastDataUpdate = DateTime.now();
       await prefs.setString('dashboard_data', jsonEncode(data));
+      await prefs.setString('last_data_update', _lastDataUpdate!.toIso8601String());
       notifyListeners();
     } catch (e) {
       print('[DataProvider] Error saving dashboard data: $e');
