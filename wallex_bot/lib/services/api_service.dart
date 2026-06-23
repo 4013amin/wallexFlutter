@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // آی‌پی کارت شبکه اصلی وای‌فای شما
   static const String baseUrl = "http://192.168.1.109:8000/api";
 
   Future<String?> _getToken() async {
