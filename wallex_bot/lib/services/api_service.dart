@@ -5,8 +5,8 @@
   import 'package:shared_preferences/shared_preferences.dart';
 
   class ApiService {
-    static const String baseUrl = "http://192.168.1.107:2000/api";
-    static const Duration _timeout = Duration(seconds: 8);
+    static const String baseUrl = "https://wallexbotas.runflare.run/api";
+    static const Duration _timeout = Duration(seconds: 30);
     
     // HTTP client با connection pooling برای سرعت بیشتر
     static final _client = http.Client();
@@ -72,22 +72,17 @@
           },
         ).timeout(_timeout);
 
-        print("Status Code: ${res.statusCode}");
-        print("Response Body: ${res.body}"); // این خط را حتماً چک کنید
-
         if (res.statusCode == 200) {
           final decoded = json.decode(utf8.decode(res.bodyBytes));
           if (decoded is Map<String, dynamic>) {
             return decoded;
           } else {
-            print("خطا: دیتای دریافتی مپ نیست، بلکه ${decoded.runtimeType} است");
             return {"error": "فرمت داده اشتباه است"};
           }
         } else {
           return {"error": "خطای سرور: ${res.statusCode}"};
         }
       } catch (e) {
-        print("[ApiService] getDashboardData Error: $e");
         return {"error": "خطا در برقراری ارتباط"};
       }
     }
@@ -145,9 +140,96 @@
           "Content-Type": "application/json"
         },
       ).timeout(_timeout);
-      
       return json.decode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
     }
+
+    // دریافت لیست تراکنش‌ها
+    Future<Map<String, dynamic>> getTransactions() async {
+      try {
+        String? token = await _getToken();
+        var res = await _client.get(
+          Uri.parse("$baseUrl/transactions/"),
+          headers: {
+            "Authorization": "Token $token",
+            "Content-Type": "application/json"
+          },
+        ).timeout(_timeout);
+
+        if (res.statusCode == 200) {
+          final decoded = json.decode(utf8.decode(res.bodyBytes));
+          if (decoded is Map<String, dynamic>) {
+            return decoded;
+          } else {
+            return {"error": "فرمت داده اشتباه است"};
+          }
+        } else {
+          return {"error": "خطای سرور: ${res.statusCode}"};
+        }
+      } catch (e) {
+        return {"error": "خطا در برقراری ارتباط"};
+      }
+    }
+
+   // در فایل api_service.dart متدهای زیر را جایگزین کنید:
+
+// ارسال درخواست فراموشی رمز عبور با شماره موبایل
+  Future<Map<String, dynamic>> sendForgotPassword(String phoneNumber) async {
+    try {
+      var res = await _client.post(
+        Uri.parse("$baseUrl/forgot-password/"),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        // تغییر کلید از email به phone_number
+        body: json.encode({"phone_number": phoneNumber}),
+      ).timeout(_timeout);
+
+      final decodedData = json.decode(utf8.decode(res.bodyBytes));
+
+      if (res.statusCode == 200) {
+        return decodedData is Map<String, dynamic> ? decodedData : {"success": true};
+      } else {
+        String errorMessage = "خطایی در سرور رخ داد";
+        if (decodedData is Map && decodedData.containsKey('error')) {
+          errorMessage = decodedData['error'];
+        }
+        return {"error": errorMessage};
+      }
+    } catch (e) {
+      return {"error": "عدم برقراری ارتباط با سرور"};
+    }
+  }
+
+  // تغییر رمز عبور با OTP و شماره موبایل
+  Future<Map<String, dynamic>> resetPassword(String phoneNumber, String otp, String newPassword) async {
+    try {
+      var res = await _client.post(
+        Uri.parse("$baseUrl/reset-password/"),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: json.encode({
+          "phone_number": phoneNumber, // تغییر کلید
+          "otp": otp,
+          "new_password": newPassword,
+        }),
+      ).timeout(_timeout);
+
+      final decodedData = json.decode(utf8.decode(res.bodyBytes));
+
+      if (res.statusCode == 200) {
+        return decodedData is Map<String, dynamic> ? decodedData : {"success": true};
+      } else {
+        String errorMessage = "خطایی در سرور رخ داد";
+        if (decodedData is Map && decodedData.containsKey('error')) {
+          errorMessage = decodedData['error'];
+        }
+        return {"error": errorMessage};
+      }
+    } catch (e) {
+      return {"error": "عدم برقراری ارتباط با سرور"};
+    }
+  }
 
     Future<void> logout() async {
       final prefs = await _getPrefs();

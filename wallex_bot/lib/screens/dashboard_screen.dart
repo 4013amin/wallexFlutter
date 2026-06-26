@@ -4,7 +4,6 @@ import 'package:shimmer/shimmer.dart';
 import 'dart:ui';
 import '../services/api_service.dart';
 import '../providers/data_provider.dart';
-import '../providers/auth_provider.dart';
 import 'analysis_screen.dart';
 import 'profile_screen.dart';
 
@@ -18,28 +17,22 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> with TickerProviderStateMixin {
   final ApiService _api = ApiService();
   int _selectedIndex = 0;
-  
-  bool _isLoading = false;
   bool _isScanning = false;
   Map<String, dynamic>? _data;
   List _currentSignals = [];
 
-  // پالت رنگی کوانتوم
-  final Color bgBody = const Color(0xFF080D1A);
-  final Color bgCard = const Color(0xFF111827);
-  final Color accentColor = const Color(0xFF3B82F6);
-  final Color buyColor = const Color(0xFF10B981);
-  final Color sellColor = const Color(0xFFF43F5E);
-  final Color holdColor = const Color(0xFFF59E0B);
-  final Color textMain = const Color(0xFFF3F4F6);
-  final Color textMuted = const Color(0xFF9CA3AF);
+  // پالت رنگی Cyberpunk/AI
+  final Color bgDark = const Color(0xFF020408);
+  final Color cardColor = const Color(0xFF0B121F).withOpacity(0.7);
+  final Color neonBlue = const Color(0xFF00D1FF);
+  final Color neonPurple = const Color(0xFF7000FF);
+  final Color neonGreen = const Color(0xFF00FFA3);
+  final Color neonRed = const Color(0xFFFF005C);
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadPersistedData();
-    });
+    _loadPersistedData();
   }
 
   void _loadPersistedData() {
@@ -47,51 +40,20 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     setState(() {
       _data = dataProvider.dashboardData;
       _currentSignals = dataProvider.signals;
-      if (_data == null) {
-        _refreshData();
-      }
+      if (_data == null) _refreshData();
     });
   }
 
   Future<void> _refreshData() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
     try {
       var res = await _api.getDashboardData();
       if (mounted) {
         final dataProvider = Provider.of<DataProvider>(context, listen: false);
         await dataProvider.saveDashboardData(res);
-        setState(() {
-          _data = res;
-          _isLoading = false;
-        });
+        setState(() => _data = res);
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _handleScan() async {
-    setState(() => _isScanning = true);
-    try {
-      var res = await _api.sendDashboardAction("scan_signals");
-      if (res != null && mounted) {
-        final dataProvider = Provider.of<DataProvider>(context, listen: false);
-        List newSignals = List.from(res['signals'] ?? []);
-        await dataProvider.saveSignals(newSignals);
-        
-        setState(() {
-          _currentSignals = newSignals;
-          if (_data != null && res['remaining_tokens'] != null) {
-            _data!['profile']['tokens_balance'] = res['remaining_tokens'];
-          }
-        });
-        
-        // Automatically switch to radar tab to show results
-        setState(() => _selectedIndex = 1);
-      }
-    } finally {
-      if (mounted) setState(() => _isScanning = false);
+      debugPrint("Refresh Error: $e");
     }
   }
 
@@ -100,238 +62,231 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: bgBody,
-        extendBody: true,
-        bottomNavigationBar: _buildBottomNav(),
-        body: _isLoading 
-            ? Center(child: CircularProgressIndicator(color: accentColor, strokeWidth: 2)) 
-            : Stack(
-                children: [
-                  _buildBackgroundGlow(),
-                  SafeArea(
-                    child: RefreshIndicator(
-                      onRefresh: _refreshData,
-                      color: accentColor,
-                      child: CustomScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        slivers: [
-                          _buildAppBar(),
-                          SliverToBoxAdapter(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              child: _buildBodyContent(),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (_isScanning) _buildLoadingOverlay(),
+        backgroundColor: bgDark,
+        body: Stack(
+          children: [
+            _buildAnimatedBackground(),
+            SafeArea(
+              child: CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  _buildGlassAppBar(),
+                  if (_selectedIndex == 0) ..._buildHomeTab(),
+                  if (_selectedIndex == 1) ..._buildRadarTab(),
+                  if (_selectedIndex == 2) SliverToBoxAdapter(child: ProfileScreen(data: _data ?? {}, onRefresh: _refreshData)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 120)),
                 ],
               ),
-      ),
-    );
-  }
-
-  Widget _buildBodyContent() {
-    if (_selectedIndex == 1) return _buildSignalsRadar();
-    if (_selectedIndex == 2) {
-    if (_data == null) return const Center(child: CircularProgressIndicator());
-    return ProfileScreen(
-      data: _data!, 
-      onRefresh: _refreshData 
-    ); 
-  }
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 20),
-        _buildTokenCard(),
-        const SizedBox(height: 25),
-        _buildQuickActions(),
-        const SizedBox(height: 30),
-        _buildRiskBanner(),
-        const SizedBox(height: 35),
-        _buildSectionHeader("موقعیت‌های باز تعهدی", Icons.layers_outlined),
-        _buildActivePositions(),
-        const SizedBox(height: 120),
-      ],
-    );
-  }
-
-  Widget _buildBottomNav() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(24, 0, 24, 30),
-      height: 70,
-      decoration: BoxDecoration(
-        color: bgCard,
-        borderRadius: BorderRadius.circular(25),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _navItem(0, Icons.grid_view_rounded, "خانه"),
-          _navItem(1, Icons.radar_rounded, "رادار"),
-          _navItem(2, Icons.person_2_rounded, "پروفایل"),
-        ],
-      ),
-    );
-  }
-
-  Widget _navItem(int index, IconData icon, String label) {
-    bool isSelected = _selectedIndex == index;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedIndex = index),
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? accentColor.withOpacity(0.1) : Colors.transparent,
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: isSelected ? accentColor : textMuted, size: 26),
-            if (isSelected)
-              Container(
-                margin: const EdgeInsets.only(top: 4), // اصلاح شده
-                height: 4, width: 4,
-                decoration: BoxDecoration(color: accentColor, shape: BoxShape.circle),
-              )
+            ),
+            _buildBottomNav(),
+            if (_isScanning) _buildScanningOverlay(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAppBar() {
-    return SliverAppBar(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      floating: true,
-      centerTitle: true,
-      automaticallyImplyLeading: false,
-      title: Text("QUANT TERMINAL", style: TextStyle(color: textMain, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1)),
-      actions: [
-        _buildStatusDot(),
-        const SizedBox(width: 20),
-      ],
-    );
-  }
-
-  Widget _buildSignalsRadar() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 20),
-        _buildSectionHeader("رادار فرصت‌های معاملاتی", Icons.radar_outlined),
-        if (_currentSignals.isEmpty && !_isScanning) 
-          _emptyState("دیتای ذخیره شده‌ای یافت نشد. اسکن کنید.")
-        else if (_isScanning)
-          _buildShimmerSignals()
-        else 
-          Column(
-            children: _currentSignals.map((s) => _FadeInSlide(delay: 50, child: _signalCard(s))).toList().cast<Widget>()
+  Widget _buildAnimatedBackground() {
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Positioned(
+            top: -100,
+            right: -50,
+            child: _GlowCircle(color: neonBlue.withOpacity(0.1), size: 300),
           ),
-        const SizedBox(height: 120),
-      ],
-    );
-  }
-
-  Widget _signalCard(Map s) {
-    bool isBuy = s['side'] == "BUY";
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: bgCard, 
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: (isBuy ? buyColor : sellColor).withOpacity(0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: (isBuy ? buyColor : sellColor).withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+          Positioned(
+            bottom: 100,
+            left: -50,
+            child: _GlowCircle(color: neonPurple.withOpacity(0.1), size: 250),
           ),
         ],
       ),
-      child: InkWell(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AnalysisScreen(symbol: s['symbol']))),
-        borderRadius: BorderRadius.circular(20),
-        child: Row(children: [
-            _coinCircle(s['symbol'], isBuy ? buyColor : sellColor),
-            const SizedBox(width: 15),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(
-                    children: [
-                      Text(s['symbol'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: (isBuy ? buyColor : sellColor).withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          isBuy ? "خرید" : "فروش",
-                          style: TextStyle(color: isBuy ? buyColor : sellColor, fontSize: 10, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Text("قیمت: ", style: TextStyle(color: textMuted, fontSize: 11)),
-                      Text(s['price']?.toString() ?? 'N/A', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-            ])),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: accentColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(Icons.arrow_forward_ios_rounded, color: accentColor, size: 14),
+    );
+  }
+
+  Widget _buildGlassAppBar() {
+    bool isActive = _data?['config']?['is_active'] ?? false;
+    return SliverAppBar(
+      backgroundColor: Colors.transparent,
+      floating: true,
+      pinned: true,
+      expandedHeight: 80,
+      flexibleSpace: ClipRRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            color: bgDark.withOpacity(0.5),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("QUANTUM AI", style: TextStyle(color: neonBlue, fontWeight: FontWeight.w900, fontSize: 20, letterSpacing: 1.2)),
+                    Row(
+                      children: [
+                        _PulseDot(color: isActive ? neonGreen : neonRed),
+                        const SizedBox(width: 6),
+                        Text(isActive ? "هسته هوشمند فعال" : "سیستم در انتظار", style: TextStyle(color: Colors.white70, fontSize: 10)),
+                      ],
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: Icon(Icons.refresh_rounded, color: neonBlue),
+                  onPressed: _refreshData,
+                )
+              ],
             ),
-        ]),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildTokenCard() {
-    int tokens = _data?['profile']?['tokens_balance'] ?? 0;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: bgCard,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  List<Widget> _buildHomeTab() {
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.all(20),
+        sliver: SliverToBoxAdapter(
+          child: Column(
             children: [
-              Text("موجودی توکن پردازشی", style: TextStyle(color: textMuted, fontSize: 12)),
-              Icon(Icons.toll_rounded, color: holdColor, size: 20),
+              _buildAIStatsCard(),
+              const SizedBox(height: 25),
+              _buildQuickActions(),
+              const SizedBox(height: 30),
+              _buildSectionHeader("معاملات زنده استراتژی", Icons.psychology_outlined),
             ],
           ),
-          const SizedBox(height: 10),
-          Text("$tokens", style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900, fontFamily: 'monospace')),
+        ),
+      ),
+      _buildActivePositionsSliver(),
+    ];
+  }
+
+  List<Widget> _buildRadarTab() {
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.all(20),
+        sliver: SliverToBoxAdapter(
+          child: _buildSectionHeader("پایش لحظه‌ای بازار (Scanner)", Icons.radar_rounded),
+        ),
+      ),
+      if (_currentSignals.isEmpty)
+        SliverToBoxAdapter(child: _buildEmptyState())
+      else
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => _buildNeuralSignalCard(_currentSignals[index], index),
+            childCount: _currentSignals.length,
+          ),
+        ),
+    ];
+  }
+
+  Widget _buildAIStatsCard() {
+    int tokens = _data?['profile']?['tokens_balance'] ?? 0;
+    return Container(
+      padding: const EdgeInsets.all(25),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        gradient: LinearGradient(colors: [neonBlue.withOpacity(0.2), neonPurple.withOpacity(0.1)]),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: Column(
+        children: [
+          const Text("قدرت پردازش فعلی", style: TextStyle(color: Colors.white54, fontSize: 12)),
+          const SizedBox(height: 8),
+          Text(tokens.toString(), style: const TextStyle(color: Colors.white, fontSize: 42, fontWeight: FontWeight.w900, letterSpacing: 2)),
           const SizedBox(height: 15),
-          _statusChip(_data?['config']?['is_paper_trading'] == true ? "PAPER MODE" : "LIVE MODE", accentColor),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+            child: Text("Real-time Analysis Engine", style: TextStyle(color: neonBlue, fontSize: 10, fontWeight: FontWeight.bold)),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNeuralSignalCard(Map s, int index) {
+    bool isBuy = s['side'] == "BUY";
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: (isBuy ? neonGreen : neonRed).withOpacity(0.2)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AnalysisScreen(symbol: s['symbol']))),
+            leading: _buildCoinIcon(s['symbol'], isBuy ? neonGreen : neonRed),
+            title: Text(s['symbol'] ?? "---", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+            subtitle: Text("Price: ${s['price']}", style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(isBuy ? "SIGNAL: LONG" : "SIGNAL: SHORT", 
+                    style: TextStyle(color: isBuy ? neonGreen : neonRed, fontWeight: FontWeight.w900, fontSize: 12)),
+                const SizedBox(height: 5),
+                const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.white24),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActivePositionsSliver() {
+    List positions = _data?['active_positions'] ?? [];
+    if (positions.isEmpty) return SliverToBoxAdapter(child: _buildEmptyState());
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          var p = positions[index];
+          double pnl = double.tryParse(p['pnl_percent']?.toString() ?? '0') ?? 0;
+          return _buildPositionCard(p, pnl);
+        },
+        childCount: positions.length,
+      ),
+    );
+  }
+
+  Widget _buildPositionCard(Map p, double pnl) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Row(
+        children: [
+          _buildCoinIcon(p['symbol'], pnl >= 0 ? neonGreen : neonRed),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(p['symbol'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                Text(p['side'] == 'long' ? "BUY ORDER" : "SELL ORDER", style: const TextStyle(color: Colors.white38, fontSize: 10)),
+              ],
+            ),
+          ),
+          Text("${pnl >= 0 ? '+' : ''}$pnl%", 
+              style: TextStyle(color: pnl >= 0 ? neonGreen : neonRed, fontWeight: FontWeight.w900, fontSize: 20)),
         ],
       ),
     );
@@ -341,12 +296,12 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     bool isActive = _data?['config']?['is_active'] ?? false;
     return Row(
       children: [
-        Expanded(child: _actionBtn("اسکن زنده", Icons.bolt_rounded, accentColor, _handleScan)),
+        Expanded(child: _buildGlassBtn("اسکن هوشمند", Icons.bolt_rounded, neonBlue, _handleScan)),
         const SizedBox(width: 15),
-        Expanded(child: _actionBtn(
-          isActive ? "توقف ربات" : "شروع ربات", 
-          isActive ? Icons.power_settings_new_rounded : Icons.play_arrow_rounded, 
-          isActive ? sellColor : buyColor, 
+        Expanded(child: _buildGlassBtn(
+          isActive ? "توقف سیستم" : "فعال‌سازی AI", 
+          isActive ? Icons.stop_circle_outlined : Icons.play_arrow_rounded, 
+          isActive ? neonRed : neonGreen, 
           () async {
             await _api.sendDashboardAction("toggle_bot");
             _refreshData();
@@ -356,154 +311,125 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     );
   }
 
-  Widget _buildRiskBanner() {
-    String? phone = _data?['profile']?['phone_number'];
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: accentColor.withOpacity(0.05), borderRadius: BorderRadius.circular(18), border: Border.all(color: accentColor.withOpacity(0.1))),
-      child: Row(children: [
-          Icon(Icons.gpp_good_rounded, color: buyColor, size: 28),
-          const SizedBox(width: 15),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text("مانیتورینگ ریسک فعال است", style: TextStyle(color: textMain, fontSize: 13, fontWeight: FontWeight.bold)),
-                Text(phone != null ? "هشدار به $phone" : "شماره همراه ثبت نشده", style: TextStyle(color: textMuted, fontSize: 11)),
-          ]))
-      ]),
-    );
-  }
-
-  Widget _buildActivePositions() {
-    List positions = _data?['active_positions'] ?? [];
-    if (positions.isEmpty) return _emptyState("موقعیت باز فعالی یافت نشد");
-    return Column(
-      children: positions.map((p) => _FadeInSlide(delay: 100, child: _positionCard(p))).toList().cast<Widget>()
-    );
-  }
-
-  Widget _positionCard(Map p) {
-    bool isLong = p['side'] == "long";
-    double pnl = double.tryParse(p['pnl_percent']?.toString() ?? '0') ?? 0;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: bgCard, borderRadius: BorderRadius.circular(20)),
-      child: Row(children: [
-          _coinCircle(p['symbol'], isLong ? buyColor : sellColor),
-          const SizedBox(width: 15),
-          Expanded(child: Text(p['symbol'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text("${pnl >= 0 ? '+' : ''}$pnl%", style: TextStyle(color: pnl >= 0 ? buyColor : sellColor, fontWeight: FontWeight.w900, fontSize: 16)),
-              Text("سود/ضرر", style: TextStyle(color: textMuted, fontSize: 10)),
-          ]),
-      ]),
-    );
-  }
-
-  Widget _actionBtn(String t, IconData i, Color c, VoidCallback tap) {
-    return InkWell(
+  Widget _buildGlassBtn(String t, IconData i, Color c, VoidCallback tap) {
+    return GestureDetector(
       onTap: tap,
-      borderRadius: BorderRadius.circular(18),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(color: c.withOpacity(0.1), borderRadius: BorderRadius.circular(18), border: Border.all(color: c.withOpacity(0.2))),
-        child: Column(children: [Icon(i, color: c), const SizedBox(height: 5), Text(t, style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.bold))]),
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        decoration: BoxDecoration(
+          color: c.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: c.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(i, color: c),
+            const SizedBox(width: 10),
+            Text(t, style: TextStyle(color: c, fontWeight: FontWeight.bold)),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _statusChip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-      child: Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
-    );
-  }
-
-  Widget _coinCircle(String sym, Color c) => Container(width: 40, height: 40, decoration: BoxDecoration(color: c.withOpacity(0.1), shape: BoxShape.circle), child: Center(child: Text(sym[0], style: TextStyle(color: c, fontWeight: FontWeight.bold))));
-
-  Widget _buildShimmerSignals() {
-    return Column(
-      children: List.generate(3, (index) => 
-        Shimmer.fromColors(
-          baseColor: bgCard,
-          highlightColor: Colors.white.withOpacity(0.05),
+  Widget _buildBottomNav() {
+    return Positioned(
+      bottom: 20, left: 20, right: 20,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(30),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: bgCard,
-              borderRadius: BorderRadius.circular(20),
+            height: 80,
+            color: Colors.white.withOpacity(0.05),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _navItem(0, Icons.grid_view_rounded, "ترمینال"),
+                _navItem(1, Icons.radar_rounded, "رادار"),
+                _navItem(2, Icons.person_2_outlined, "پروفایل"),
+              ],
             ),
-            child: Row(children: [
-              Container(width: 40, height: 40, decoration: BoxDecoration(color: Colors.white10, shape: BoxShape.circle)),
-              const SizedBox(width: 15),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Container(width: 80, height: 16, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(4))),
-                const SizedBox(height: 8),
-                Container(width: 60, height: 12, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(4))),
-              ])),
-              Container(width: 24, height: 24, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8))),
-            ]),
           ),
         ),
       ),
     );
   }
-  Widget _emptyState(String m) => Center(child: Padding(padding: const EdgeInsets.all(30), child: Text(m, style: TextStyle(color: textMuted, fontSize: 12))));
-  Widget _buildSectionHeader(String t, IconData i) => Padding(padding: const EdgeInsets.only(bottom: 15), child: Row(children: [Icon(i, color: accentColor, size: 20), const SizedBox(width: 10), Text(t, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))]));
-  Widget _buildLoadingOverlay() => Container(
-    color: Colors.black54,
-    child: Center(
+
+  Widget _navItem(int idx, IconData icon, String label) {
+    bool isSel = _selectedIndex == idx;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedIndex = idx),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(color: Color(0xFF3B82F6), strokeWidth: 3),
-          const SizedBox(height: 20),
-          Text(
-            "در حال اسکن بازار...",
-            style: const TextStyle(color: Color(0xFFF3F4F6), fontSize: 16, fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            "در حال تحلیل فرصت‌های معاملاتی",
-            style: TextStyle(color: textMuted, fontSize: 12),
-          ),
+          Icon(icon, color: isSel ? neonBlue : Colors.white38),
+          const SizedBox(height: 4),
+          Text(label, style: TextStyle(color: isSel ? neonBlue : Colors.white38, fontSize: 10)),
+          if (isSel) Container(margin: const EdgeInsets.only(top: 4), width: 4, height: 4, decoration: BoxDecoration(color: neonBlue, shape: BoxShape.circle))
         ],
       ),
-    ),
-  );
-
-  Widget _buildStatusDot() {
-    bool isActive = _data?['config']?['is_active'] ?? false;
-    return Row(
-      children: [
-        Text(isActive ? "LIVE" : "IDLE", style: TextStyle(color: isActive ? buyColor : sellColor, fontSize: 10, fontWeight: FontWeight.bold)),
-        const SizedBox(width: 8),
-        _PulseDot(color: isActive ? buyColor : sellColor),
-      ],
     );
   }
 
-  Widget _buildBackgroundGlow() {
-    return Positioned(
-      top: -100,
-      right: -100,
-      child: Container(
-        width: 300,
-        height: 300,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [accentColor.withOpacity(0.05), Colors.transparent],
-            stops: const [0.0, 1.0],
-          ),
+  Widget _buildScanningOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.95), // FIXED black95 Error
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(width: 200, height: 200, child: CircularProgressIndicator(color: neonBlue, strokeWidth: 2)),
+            const SizedBox(height: 30),
+            const _ShimmerText(text: "در حال پردازش شبکه‌های عصبی..."),
+          ],
         ),
       ),
     );
   }
+
+  Future<void> _handleScan() async {
+    setState(() => _isScanning = true);
+    try {
+      var res = await _api.sendDashboardAction("scan_signals");
+      if (mounted) {
+        final dataProvider = Provider.of<DataProvider>(context, listen: false);
+        List signals = List.from(res['signals'] ?? []);
+        await dataProvider.saveSignals(signals);
+        setState(() {
+          _currentSignals = signals;
+          _isScanning = false;
+          _selectedIndex = 1; 
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isScanning = false);
+    }
+  }
+
+  Widget _buildCoinIcon(String sym, Color color) => Container(
+    width: 45, height: 45,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      gradient: LinearGradient(colors: [color.withOpacity(0.4), color.withOpacity(0)]),
+      border: Border.all(color: color.withOpacity(0.3))
+    ),
+    child: Center(child: Text(sym.isNotEmpty ? sym[0] : "?", style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 20))),
+  );
+
+  Widget _buildSectionHeader(String t, IconData i) => Row(children: [Icon(i, color: neonBlue, size: 20), const SizedBox(width: 10), Text(t, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))]);
+
+  Widget _buildEmptyState() => Container(padding: const EdgeInsets.all(50), child: const Column(children: [Icon(Icons.layers_clear_outlined, color: Colors.white10, size: 60), SizedBox(height: 15), Text("داده‌ای یافت نشد", style: TextStyle(color: Colors.white24))]));
 }
 
-// --- کلاس‌های کمکی انیمیشن (اضافه شد برای رفع خطا) ---
+class _GlowCircle extends StatelessWidget {
+  final Color color;
+  final double size;
+  const _GlowCircle({required this.color, required this.size});
+  @override
+  Widget build(BuildContext context) => Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: color, blurRadius: 100, spreadRadius: 50)]));
+}
 
 class _PulseDot extends StatefulWidget {
   final Color color;
@@ -516,19 +442,24 @@ class __PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMix
   late AnimationController _c;
   @override
   void initState() {
-    _c = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
+    _c = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat(reverse: true);
     super.initState();
   }
   @override
-  Widget build(BuildContext context) => FadeTransition(opacity: _c, child: Container(width: 8, height: 8, decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle)));
+  Widget build(BuildContext context) => ScaleTransition(scale: Tween(begin: 0.8, end: 1.2).animate(_c), child: Container(width: 8, height: 8, decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle, boxShadow: [BoxShadow(color: widget.color, blurRadius: 5)])));
   @override
   void dispose() { _c.dispose(); super.dispose(); }
 }
 
-class _FadeInSlide extends StatelessWidget {
-  final Widget child;
-  final int delay;
-  const _FadeInSlide({required this.child, required this.delay});
+class _ShimmerText extends StatelessWidget {
+  final String text;
+  const _ShimmerText({required this.text});
   @override
-  Widget build(BuildContext context) => child;
+  Widget build(BuildContext context) {
+    return Shimmer.fromColors(
+      baseColor: Colors.white,
+      highlightColor: const Color(0xFF00D1FF),
+      child: Text(text, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+    );
+  }
 }

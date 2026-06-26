@@ -28,6 +28,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isPaperTrading = true;
   String? _processingPackageId;
   bool _isUserTyping = false; // برای جلوگیری از آپدیت controllers هنگام تایپ کاربر
+  List<dynamic> _transactions = []; // لیست تراکنش‌ها
 
   // پالت رنگی
   final Color _bgColor = const Color(0xFF0B1120);
@@ -43,6 +44,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _initializeData();
+    _loadTransactions();
   }
 
   void _initializeData() {
@@ -166,6 +168,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       } else if (res.containsKey('payment_url') && res['payment_url'] != null) {
         final Uri url = Uri.parse(res['payment_url']);
         await launchUrl(url, mode: LaunchMode.externalApplication);
+        // بعد از باز شدن لینک پرداخت، لیست تراکنش‌ها را رفرش کن
+        _loadTransactions();
       } else {
         _showSnackBar("لینک پرداخت دریافت نشد", isError: true);
       }
@@ -186,11 +190,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
       } else {
         _showSnackBar("۱۰ توکن دمو اضافه شد", isSuccess: true);
         widget.onRefresh();
+        _loadTransactions(); // رفرش لیست تراکنش‌ها
       }
     } catch (e) {
       if (mounted) _showSnackBar("خطا در سرور", isError: true);
     } finally {
       if (mounted) setState(() => _isDemoCharging = false);
+    }
+  }
+
+  Future<void> _loadTransactions() async {
+    try {
+      print('[ProfileScreen] Loading transactions...');
+      final res = await _api.getTransactions().timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      print('[ProfileScreen] Transactions response: $res');
+      if (res.containsKey('transactions')) {
+        setState(() => _transactions = res['transactions'] as List<dynamic>);
+        print('[ProfileScreen] Loaded ${_transactions.length} transactions');
+      } else if (res.containsKey('error')) {
+        print('[ProfileScreen] Error loading transactions: ${res['error']}');
+      }
+    } catch (e) {
+      print('[ProfileScreen] Exception loading transactions: $e');
     }
   }
 
@@ -227,7 +249,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final profile = widget.data['profile'] ?? {};
     final tokens = (profile['tokens_balance'] ?? 0).toString();
-    final transactions = widget.data['transactions'] as List<dynamic>? ?? [];
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -268,7 +289,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(height: 36),
                       _buildSectionTitle("امور مالی", Icons.account_balance_wallet_rounded),
                       const SizedBox(height: 12),
-                      _buildTransactionHistory(transactions),
+                      _buildTransactionHistory(_transactions),
                       const SizedBox(height: 24),
                       _buildDemoChargeCard(),
                     ],
@@ -319,7 +340,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: _accentColor.withOpacity(0.25), blurRadius: 20, offset: const Offset(0, 10)),
+          BoxShadow(color: _accentColor.withValues(alpha: 0.25), blurRadius: 20, offset: const Offset(0, 10)),
         ],
       ),
       child: Stack(
@@ -328,7 +349,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Positioned(
             left: -30,
             bottom: -30,
-            child: Icon(Icons.bolt_rounded, size: 140, color: Colors.white.withOpacity(0.08)),
+            child: Icon(Icons.bolt_rounded, size: 140, color: Colors.white.withValues(alpha: 0.08)),
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -341,7 +362,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text(
@@ -369,7 +390,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
+                  color: Colors.white.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.bolt_rounded, color: Colors.yellowAccent, size: 36),
@@ -438,7 +459,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
 
   Widget _buildSmsAlertCard() => _buildGlassCard(
-        borderColor: _accentColor.withOpacity(0.3),
+        borderColor: _accentColor.withValues(alpha: 0.3),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -481,10 +502,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       margin: const EdgeInsets.only(bottom: 16),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: isPremium ? mainColor.withOpacity(0.05) : _panelColor,
+        color: isPremium ? mainColor.withValues(alpha: 0.05) : _panelColor,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: isPremium ? mainColor.withOpacity(0.5) : _borderColor, width: isPremium ? 1.5 : 1),
-        boxShadow: isPremium ? [BoxShadow(color: mainColor.withOpacity(0.1), blurRadius: 15)] : [],
+        border: Border.all(color: isPremium ? mainColor.withValues(alpha: 0.5) : _borderColor, width: isPremium ? 1.5 : 1),
+        boxShadow: isPremium ? [BoxShadow(color: mainColor.withValues(alpha: 0.1), blurRadius: 15)] : [],
       ),
       child: Stack(
         children: [
@@ -507,7 +528,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: mainColor.withOpacity(0.15), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: mainColor.withValues(alpha: 0.15), shape: BoxShape.circle),
                   child: Icon(isPremium ? Icons.workspace_premium_rounded : Icons.star_rounded, color: mainColor, size: 28),
                 ),
                 const SizedBox(width: 16),
@@ -596,14 +617,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           return Container(
             decoration: BoxDecoration(
-              border: index != transactions.length - 1 ? Border(bottom: BorderSide(color: _borderColor.withOpacity(0.5))) : null,
+              border: index != transactions.length - 1 ? Border(bottom: BorderSide(color: _borderColor.withValues(alpha: 0.5))) : null,
             ),
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: statusColor.withOpacity(0.1), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.1), shape: BoxShape.circle),
                   child: Icon(statusIcon, color: statusColor, size: 20),
                 ),
                 const SizedBox(width: 12),
@@ -676,7 +697,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         color: _panelColor,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: borderColor ?? _borderColor),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: child,
     );

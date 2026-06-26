@@ -7,63 +7,68 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 
 void main() async {
-  // اطمینان از مقداردهی اولیه فلاتر قبل از اجرای برنامه
+  // ۱. اطمینان از مقداردهی اولیه برای استفاده از SharedPreferences
   WidgetsFlutterBinding.ensureInitialized();
   
+  // ۲. ایجاد نمونه از پروایدرها قبل از runApp (اختیاری اما برای سرعت لود بهتر است)
+  final dataProvider = DataProvider();
+  final authProvider = AuthProvider();
+
+  // شروع عملیات بارگذاری دیتای کش شده همزمان با لود شدن اپلیکیشن
+  // این کار باعث می‌شود سیگنال‌های قبلی بلافاصله در دسترس باشند
+  dataProvider.loadCachedData();
+  authProvider.checkAuthStatus();
+
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          // بلافاصله بعد از ساخته شدن، وضعیت لاگین را چک می‌کند
-          create: (context) => AuthProvider()..checkAuthStatus(),
-        ),
-        ChangeNotifierProvider(
-          // بارگذاری داده‌های کش شده داشبورد
-          create: (context) => DataProvider()..loadCachedData(),
-        ),
+        ChangeNotifierProvider.value(value: authProvider),
+        ChangeNotifierProvider.value(value: dataProvider),
       ],
-      child: WallexBotApp(),
+      child: const WallexBotApp(),
     ),
   );
 }
 
 class WallexBotApp extends StatelessWidget {
+  const WallexBotApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Wallex Bot',
-      // تم تاریک هماهنگ با طراحی والکس
+      // تم تاریک هماهنگ با طراحی کوانتوم
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0D1117),
-        primaryColor: Colors.blueAccent,
-        fontFamily: 'Vazir', // اگر فونت فارسی دارید نام آن را اینجا بگذارید
+        scaffoldBackgroundColor: const Color(0xFF080D1A), // رنگ تیره پس‌زمینه شما
+        primaryColor: const Color(0xFF3B82F6),
+        fontFamily: 'Vazir', 
       ),
       
-      // منطق اصلی نمایش صفحات
       home: Consumer<AuthProvider>(
         builder: (context, auth, _) {
-          // ۱. حالت بارگذاری (وقتی اپ تازه باز شده و دارد توکن را چک می‌کند)
+          // ۱. نمایش لودینگ در ابتدای باز شدن اپلیکیشن
           if (auth.isLoading) {
             return const Scaffold(
+              backgroundColor: Color(0xFF080D1A),
               body: Center(
-                child: CircularProgressIndicator(color: Colors.blueAccent),
+                child: CircularProgressIndicator(color: Color(0xFF3B82F6)),
               ),
             );
           }
 
-          // ۲. اگر کاربر وارد شده است (توکن معتبر دارد)
+          // ۲. اگر کاربر قبلاً لاگین کرده و توکنش معتبر است
           if (auth.isAuthenticated) {
             return const DashboardScreen();
           }
 
-          // ۳. اگر کاربر وارد نشده است
+          // ۳. اگر کاربر باید دوباره وارد شود
           return LoginScreen();
         },
       ),
 
-      // مسیرهای فرعی
+      // مسیرهای تعریف شده برای دسترسی سریع
       routes: {
         '/login': (context) => LoginScreen(),
         '/register': (context) => RegisterScreen(),
