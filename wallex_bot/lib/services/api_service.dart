@@ -1,5 +1,4 @@
   // lib/services/api_service.dart
-
   import 'package:http/http.dart' as http;
   import 'dart:convert';
   import 'package:shared_preferences/shared_preferences.dart';
@@ -10,7 +9,7 @@
     
     // HTTP client با connection pooling برای سرعت بیشتر
     static final _client = http.Client();
-    
+      
     // Cache SharedPreferences برای جلوگیری از getInstance مکرر
     static SharedPreferences? _prefs;
     

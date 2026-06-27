@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
+import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 
 class AnalysisScreen extends StatefulWidget {
@@ -7,379 +7,370 @@ class AnalysisScreen extends StatefulWidget {
   const AnalysisScreen({super.key, required this.symbol});
 
   @override
-  _AnalysisScreenState createState() => _AnalysisScreenState();
+  State<AnalysisScreen> createState() => _AnalysisScreenState();
 }
 
-class _AnalysisScreenState extends State<AnalysisScreen> {
+class _AnalysisScreenState extends State<AnalysisScreen> with SingleTickerProviderStateMixin {
   final ApiService _api = ApiService();
-  
-  // پالت رنگی حرفه‌ای (مطابق HTML)
-  final Color bgBody = const Color(0xFF0B0F19);
-  final Color bgPanel = const Color(0xFF111827);
-  final Color bgCard = const Color(0xFF1F2937);
-  final Color accentColor = const Color(0xFF3B82F6);
-  final Color buyColor = const Color(0xFF10B981);
-  final Color sellColor = const Color(0xFFF43F5E);
-  final Color holdColor = const Color(0xFFF59E0B);
-  final Color textMuted = const Color(0xFF9CA3AF);
-  final Color borderColor = Colors.white.withOpacity(0.08);
 
-  late TextEditingController _slController, _tpController, _entryController, _collateralController, _totalCapitalController;
-  String _selectedSide = "BUY";
-  Map<String, dynamic>? _analysisData;
-  bool _isLoading = true;
-  double _allowedInvestment = 0;
+  // ── پالت رنگی ──────────────────────────────────────────
+  static const Color bgBody    = Color(0xFF0B0F19);
+  static const Color bgPanel   = Color(0xFF111827);
+  static const Color accent    = Color(0xFF3B82F6);
+  static const Color buyClr    = Color(0xFF10B981);
+  static const Color sellClr   = Color(0xFFF43F5E);
+  static const Color holdClr   = Color(0xFFF59E0B);
+  static const Color mutedClr  = Color(0xFF9CA3AF);
+  static const Color borderClr = Color(0x14FFFFFF);
+
+  late final TextEditingController _slCtrl, _tpCtrl, _entryCtrl, _capitalCtrl;
+  late final AnimationController _fadeCtrl;
+  late final Animation<double> _fadeAnim;
+
+  String _side = 'BUY';
+  Map<String, dynamic>? _data;
+  bool _loading = true;
+  double _allowedInvest = 0;
 
   @override
   void initState() {
     super.initState();
-    _slController = TextEditingController();
-    _tpController = TextEditingController();
-    _entryController = TextEditingController();
-    _collateralController = TextEditingController();
-    _totalCapitalController = TextEditingController();
+    _slCtrl      = TextEditingController();
+    _tpCtrl      = TextEditingController();
+    _entryCtrl   = TextEditingController();
+    _capitalCtrl = TextEditingController();
+
+    _fadeCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _slCtrl.dispose(); 
+    _tpCtrl.dispose();
+    _entryCtrl.dispose(); 
+    _capitalCtrl.dispose();
+    _fadeCtrl.dispose();
+    super.dispose();
+  }
+
+  String _fmt(dynamic v) {
+    if (v == null || v == 0) return '0';
+    final n = double.tryParse(v.toString())?.toInt() ?? 0;
+    return NumberFormat('#,###').format(n);
   }
 
   Future<void> _loadData() async {
     try {
-      final response = await _api.getCoinAnalysis(widget.symbol);
-      final data = response['analysis'];
-      if (mounted) {
-        setState(() {
-          _analysisData = data;
-          _entryController.text = data?['current_price']?.toString() ?? '0';
-          _slController.text = data?['sl_price']?.toString() ?? '';
-          _tpController.text = data?['tp_price']?.toString() ?? '';
-          _selectedSide = (data?['direction']?.toString().contains("SELL") ?? false) ? "SELL" : "BUY";
-          _isLoading = false;
-        });
-      }
+      final res  = await _api.getCoinAnalysis(widget.symbol);
+      final data = res['analysis'] as Map<String, dynamic>?;
+      if (!mounted) return;
+      setState(() {
+        _data        = data;
+        _entryCtrl.text = data?['current_price']?.toString() ?? '0';
+        _slCtrl.text    = data?['sl_price']?.toString() ?? '';
+        _tpCtrl.text    = data?['tp_price']?.toString() ?? '';
+        _side        = (data?['direction']?.toString().toUpperCase().contains('SELL') ?? false) ? 'SELL' : 'BUY';
+        _loading     = false;
+      });
+      _fadeCtrl.forward();
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  void _calculateAllowedRisk(String value) {
-    double total = double.tryParse(value.replaceAll(',', '')) ?? 0;
-    double percent = double.tryParse(_analysisData?['allocation_num']?.toString() ?? '0') ?? 0;
-    setState(() {
-      _allowedInvestment = (total * percent) / 100;
-    });
+  void _calcRisk(String raw) {
+    final clean   = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    final capital = double.tryParse(clean) ?? 0;
+    final pct     = double.tryParse(_data?['allocation_num']?.toString() ?? '5') ?? 5;
+    setState(() => _allowedInvest = capital * pct / 100);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor: bgBody,
-        appBar: _buildAppBar(),
-        body: _isLoading 
-          ? Center(child: CircularProgressIndicator(color: accentColor))
-          : SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-              child: Column(
-                children: [
-                  _buildSafetyScoreHeader(),
-                  const SizedBox(height: 20),
-                  _buildAlertBox(),
-                  const SizedBox(height: 25),
-                  _buildRiskRewardSection(), // بخش ریسک به ریوارد جدید
-                  const SizedBox(height: 25),
-                  _buildDcaSection(), // بخش DCA جدید
-                  const SizedBox(height: 25),
-                  _buildSectionCard("پایش ساختار و جریان بازار", Icons.grid_view_rounded, [
-                    _buildInfoRow("موقعیت کوتاه مدت (15m)", _analysisData!['trend_15m']),
-                    _buildInfoRow("روند اصلی (1h)", _analysisData!['trend_1h']),
-                    _buildInfoRow("روند کلان (4h)", _analysisData!['trend_4h']),
-                    _buildInfoRow("جریان نقدینگی (BTC)", _analysisData!['btc_trend']),
-                    _buildInfoRow("تراکم سفارشات", "خرید ${_analysisData!['imbalance']}% | فروش ${_analysisData!['ask_imbalance']}%", valueColor: accentColor),
-                  ]),
-                  const SizedBox(height: 25),
-                  _buildSmartCalculator(), // ماشین حساب هوشمند جدید
-                  const SizedBox(height: 25),
-                  _buildSectionCard("اندیکاتورهای شتاب حرکتی", Icons.analytics_outlined, [
-                    _buildIndicatorRow("شاخص قدرت (ADX)", _analysisData!['adx'].toString(), 
-                      _analysisData!['adx'] > 25 ? "روند قوی" : "روند ضعیف", _analysisData!['adx'] > 25 ? buyColor : sellColor),
-                    _buildIndicatorRow("شاخص RSI", _analysisData!['rsi'].toString(), 
-                      _analysisData!['rsi'] > 70 ? "اشباع خرید" : (_analysisData!['rsi'] < 30 ? "اشباع فروش" : "خنثی"), 
-                      _analysisData!['rsi'] > 70 ? sellColor : (_analysisData!['rsi'] < 30 ? buyColor : textMuted)),
-                    _buildIndicatorRow("جریان پول هوشمند (CMF)", _analysisData!['cmf'].toString(), 
-                      _analysisData!['cmf'] > 0.05 ? "انباشت" : "توزیع", _analysisData!['cmf'] > 0.05 ? buyColor : sellColor),
-                  ]),
-                  const SizedBox(height: 25),
-                  _buildTradePanel(),
-                  const SizedBox(height: 50),
-                ],
+    // ویجت Directionality حذف شد تا خطا برطرف شود
+    return Scaffold(
+      backgroundColor: bgBody,
+      appBar: _appBar(),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: accent))
+          : FadeTransition(
+              opacity: _fadeAnim,
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                child: Column(
+                  children: [
+                    _scoreHeader(),
+                    const SizedBox(height: 16),
+                    _alertBox(),
+                    const SizedBox(height: 20),
+                    _rrSection(),
+                    const SizedBox(height: 20),
+                    _dcaCard(),
+                    const SizedBox(height: 20),
+                    _smartCalc(),
+                    const SizedBox(height: 20),
+                    _marketCard(),
+                    const SizedBox(height: 20),
+                    _tradePanel(),
+                    const SizedBox(height: 50),
+                  ],
+                ),
               ),
             ),
-      ),
     );
   }
 
-  // --- المان‌های جدید الهام گرفته از نسخه وب ---
+  PreferredSizeWidget _appBar() => AppBar(
+    backgroundColor: bgBody,
+    elevation: 0,
+    centerTitle: true,
+    title: Text(
+      'Analysis ${widget.symbol}',
+      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+    ),
+    leading: IconButton(
+      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white54, size: 18),
+      onPressed: () => Navigator.pop(context),
+    ),
+  );
 
-  // ۱. هدر امتیاز امنیت
-  Widget _buildSafetyScoreHeader() {
-    int score = int.tryParse(_analysisData!['safety_score']?.toString() ?? '0') ?? 0;
-    Color scoreColor = score >= 70 ? buyColor : (score >= 45 ? holdColor : sellColor);
+  Widget _scoreHeader() {
+    final score     = int.tryParse(_data?['safety_score']?.toString() ?? '0') ?? 0;
+    final scoreClr  = score >= 70 ? buyClr : (score >= 45 ? holdClr : sellClr);
+    final label     = score >= 70 ? 'SAFE' : (score >= 45 ? 'MID' : 'RISKY');
 
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: bgPanel, 
-        borderRadius: BorderRadius.circular(24), 
-        border: Border.all(color: borderColor),
-        boxShadow: [BoxShadow(color: scoreColor.withOpacity(0.05), blurRadius: 20)]
-      ),
-      child: Row(
-        children: [
-          Stack(alignment: Alignment.center, children: [
-            SizedBox(width: 90, height: 90, child: CircularProgressIndicator(value: score/100, strokeWidth: 10, backgroundColor: borderColor, valueColor: AlwaysStoppedAnimation(scoreColor))),
-            Text("$score%", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'monospace')),
-          ]),
-          const SizedBox(width: 20),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("امتیاز امنیت ورود", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white)),
-                const SizedBox(height: 6),
-                Text("هرچه این امتیاز بالاتر باشد، پتانسیل ثبات قیمت مطلوب‌تر است.", style: TextStyle(fontSize: 12, color: textMuted, height: 1.5)),
-              ],
+    return _panel(
+      child: Row(children: [
+        Stack(alignment: Alignment.center, children: [
+          SizedBox(
+            width: 72, height: 72,
+            child: CircularProgressIndicator(
+              value: score / 100, strokeWidth: 7,
+              backgroundColor: borderClr,
+              valueColor: AlwaysStoppedAnimation(scoreClr),
             ),
-          )
-        ],
-      ),
-    );
-  }
-
-  // ۲. بخش ریسک به ریوارد (Risk/Reward Grid)
-  Widget _buildRiskRewardSection() {
-    return Row(
-      children: [
-        _riskBox("حد ضرر (SL)", _analysisData!['sl_price'].toString(), "${_analysisData!['sl_percent']}%", sellColor),
-        const SizedBox(width: 10),
-        _riskBox("ریسک به ریوارد", "1 : ${_analysisData!['rrr']}", "وضعیت مطلوب", accentColor, isCenter: true),
-        const SizedBox(width: 10),
-        _riskBox("حد سود (TP)", _analysisData!['tp_price'].toString(), "${_analysisData!['tp_percent']}%", buyColor),
-      ],
-    );
-  }
-
-  Widget _riskBox(String label, String value, String sub, Color color, {bool isCenter = false}) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: isCenter ? color.withOpacity(0.1) : bgPanel,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: isCenter ? color.withOpacity(0.5) : borderColor),
-        ),
-        child: Column(
-          children: [
-            Text(label, style: TextStyle(color: textMuted, fontSize: 10)),
-            const SizedBox(height: 8),
-            Text(value, style: TextStyle(color: isCenter ? Colors.white : color, fontWeight: FontWeight.w900, fontSize: 15, fontFamily: 'monospace')),
-            const SizedBox(height: 4),
-            Text(sub, style: TextStyle(color: color.withOpacity(0.7), fontSize: 10, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ۳. پله‌های ورود (DCA)
-  Widget _buildDcaSection() {
-    return _buildSectionCard("استراتژی ورود پله‌ای (DCA)", Icons.layers_outlined, [
-      _buildInfoRow("پله اول (قیمت فعلی)", "${_analysisData!['dca_1']} تومان", valueColor: Colors.white),
-      _buildInfoRow("پله دوم (حمایت لیمیت)", "${_analysisData!['dca_2']} تومان", valueColor: buyColor),
-    ]);
-  }
-
-  // ۴. ماشین حساب هوشمند ریسک
-  Widget _buildSmartCalculator() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: bgPanel, 
-        borderRadius: BorderRadius.circular(24), 
-        border: Border.all(color: holdColor.withOpacity(0.3))
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [Icon(Icons.calculate_outlined, color: holdColor, size: 20), const SizedBox(width: 10), const Text("ماشین حساب هوشمند ریسک", style: TextStyle(fontWeight: FontWeight.bold))]),
-          const SizedBox(height: 15),
-          Text("بر اساس تحلیل، پیشنهاد می‌شود حداکثر ${_analysisData!['allocation_num']}% از سرمایه را وارد کنید.", style: TextStyle(color: textMuted, fontSize: 12)),
-          const SizedBox(height: 15),
-          _buildInputField("کل سرمایه آزاد شما (تومان)", _totalCapitalController, onChanged: _calculateAllowedRisk),
-          const SizedBox(height: 15),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: bgBody, borderRadius: BorderRadius.circular(15), border: Border.all(color: borderColor, style: BorderStyle.none)),
-            child: Column(
-              children: [
-                Text("مبلغ مجاز ورود به این معامله:", style: TextStyle(color: textMuted, fontSize: 11)),
-                const SizedBox(height: 5),
-                Text("${_allowedInvestment.toInt()} تومان", style: TextStyle(color: holdColor, fontSize: 18, fontWeight: FontWeight.w900, fontFamily: 'monospace')),
-              ],
-            ),
-          )
-        ],
-      ),
-    );
-  }
-
-  // ۵. پنل ثبت معامله
-  Widget _buildTradePanel() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [bgCard, bgPanel], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(28), 
-        border: Border.all(color: borderColor)
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text("میز کار ورود امن", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 20),
-        Row(children: [
-          Expanded(child: _buildSideButton("خرید (LONG)", "BUY", buyColor)),
-          const SizedBox(width: 12),
-          Expanded(child: _buildSideButton("فروش (SHORT)", "SELL", sellColor)),
+          ),
+          Text('$score%', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scoreClr)),
         ]),
-        const SizedBox(height: 20),
-        _buildInputField("قیمت لحظه‌ای", _entryController, isReadOnly: true),
-        const SizedBox(height: 15),
-        Row(children: [
-          Expanded(child: _buildInputField("حد ضرر (SL)", _slController, textColor: sellColor)),
-          const SizedBox(width: 12),
-          Expanded(child: _buildInputField("حد سود (TP)", _tpController, textColor: buyColor)),
-        ]),
-        const SizedBox(height: 25),
-        SizedBox(width: double.infinity, height: 58, child: ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: accentColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), elevation: 10, shadowColor: accentColor.withOpacity(0.3)),
-          onPressed: () {}, 
-          child: const Text("تایید و ارسال دستور به هسته", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
-        )),
+        const SizedBox(width: 18),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Safety Score', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+          const SizedBox(height: 4),
+          _chip(label, scoreClr),
+          const SizedBox(height: 6),
+          const Text('Strategy potential based on current market data', style: TextStyle(fontSize: 11, color: mutedClr)),
+        ])),
       ]),
     );
   }
 
-  // --- متدهای کمکی UI ---
+  Widget _chip(String text, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+    decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
+    child: Text(text, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+  );
 
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      backgroundColor: bgBody,
-      elevation: 0,
-      title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text("آنالیز هوشمند ${widget.symbol}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        Text("صیانت از سرمایه (Risk Management)", style: TextStyle(fontSize: 10, color: textMuted)),
-      ]),
-    );
+  Widget _alertBox() {
+    final score = int.tryParse(_data?['safety_score']?.toString() ?? '0') ?? 0;
+    if (score < 45) return _alertItem('High Risk', 'Entry not recommended.', sellClr, Icons.warning_amber_rounded);
+    return _alertItem('Structure Confirmed', 'High potential for success.', buyClr, Icons.check_circle_outline_rounded);
   }
 
-  Widget _buildInputField(String label, TextEditingController controller, {bool isReadOnly = false, Color? textColor, Function(String)? onChanged}) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: TextStyle(color: textMuted, fontSize: 11)),
-      const SizedBox(height: 8),
-      TextField(
-        controller: controller,
-        readOnly: isReadOnly,
-        onChanged: onChanged,
-        keyboardType: TextInputType.number,
-        style: TextStyle(color: textColor ?? Colors.white, fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
-        decoration: InputDecoration(
-          filled: true, fillColor: bgBody.withOpacity(0.5),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: borderColor)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: accentColor)),
-        ),
+  Widget _alertItem(String title, String desc, Color clr, IconData icon) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: clr.withOpacity(0.07),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: clr.withOpacity(0.25)),
+    ),
+    child: Row(children: [
+      Icon(icon, color: clr, size: 22),
+      const SizedBox(width: 12),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: TextStyle(color: clr, fontWeight: FontWeight.bold, fontSize: 13)),
+        const SizedBox(height: 2),
+        Text(desc, style: TextStyle(color: clr.withOpacity(0.8), fontSize: 11)),
+      ])),
+    ]),
+  );
+
+  Widget _rrSection() => Row(children: [
+    _rrBox('Stop Loss', _fmt(_data?['sl_price']), '${_data?['sl_percent'] ?? 0}%', sellClr),
+    const SizedBox(width: 8),
+    _rrBox('R / R', '1 : ${_data?['rrr'] ?? 0}', 'Optimal', accent, center: true),
+    const SizedBox(width: 8),
+    _rrBox('Take Profit', _fmt(_data?['tp_price']), '${_data?['tp_percent'] ?? 0}%', buyClr),
+  ]);
+
+  Widget _rrBox(String lbl, String val, String sub, Color clr, {bool center = false}) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        color: center ? clr.withOpacity(0.1) : bgPanel,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: center ? clr.withOpacity(0.5) : borderClr),
       ),
-    ]);
-  }
-
-  Widget _buildSectionCard(String title, IconData icon, List<Widget> children) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: bgPanel, borderRadius: BorderRadius.circular(24), border: Border.all(color: borderColor)),
       child: Column(children: [
-        Row(children: [Icon(icon, color: accentColor, size: 20), const SizedBox(width: 10), Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14))]),
-        const Divider(color: Colors.white10, height: 30),
-        ...children
+        Text(lbl, style: const TextStyle(color: mutedClr, fontSize: 10)),
+        const SizedBox(height: 6),
+        FittedBox(child: Text(val, style: TextStyle(color: center ? Colors.white : clr, fontWeight: FontWeight.bold, fontSize: 13))),
+        const SizedBox(height: 4),
+        Text(sub, style: TextStyle(color: clr.withOpacity(0.8), fontSize: 10)),
       ]),
-    );
-  }
+    ),
+  );
 
-  Widget _buildInfoRow(String label, dynamic value, {Color? valueColor}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(label, style: TextStyle(color: textMuted, fontSize: 12)),
-        Text(value?.toString() ?? '-', style: TextStyle(color: valueColor ?? Colors.white, fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Vazir')),
+  Widget _dcaCard() => _sectionCard('DCA Steps', Icons.layers_outlined, [
+    _infoRow('Step 1 (Current)', '${_fmt(_data?['dca_1'])} Toman'),
+    _infoRow('Step 2 (Support)', '${_fmt(_data?['dca_2'])} Toman', valClr: buyClr),
+  ]);
+
+  Widget _smartCalc() => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: bgPanel,
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: holdClr.withOpacity(0.3)),
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        const Icon(Icons.calculate_outlined, color: holdClr, size: 20),
+        const SizedBox(width: 10),
+        const Text('Smart Risk Calculator', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
       ]),
-    );
-  }
-
-  Widget _buildIndicatorRow(String label, String value, String status, Color statusColor) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(label, style: TextStyle(color: textMuted, fontSize: 12)),
-        Row(children: [
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'monospace')),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-            child: Text(status, style: TextStyle(color: statusColor, fontSize: 9, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 6),
+      Text('Suggested allocation: ${_data?['allocation_num'] ?? 5}%', style: const TextStyle(color: mutedClr, fontSize: 12)),
+      const SizedBox(height: 14),
+      _field('Total Capital (Toman)', _capitalCtrl, onChanged: _calcRisk, focusBorder: holdClr),
+      const SizedBox(height: 14),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(color: bgBody, borderRadius: BorderRadius.circular(14)),
+        child: Column(children: [
+          const Text('Allowed Investment:', style: TextStyle(color: mutedClr, fontSize: 11)),
+          const SizedBox(height: 6),
+          Text(
+            '${_fmt(_allowedInvest.toInt())} Toman',
+            style: const TextStyle(color: holdClr, fontSize: 22, fontWeight: FontWeight.w900),
           ),
         ]),
-      ]),
-    );
-  }
+      ),
+    ]),
+  );
 
-  Widget _buildSideButton(String label, String side, Color color) {
-    bool isSelected = _selectedSide == side;
-    return InkWell(
-      onTap: () => setState(() => _selectedSide = side),
+  Widget _marketCard() => _sectionCard('Market Structure', Icons.grid_view_rounded, [
+    _infoRow('Short-term', _data?['trend_15m'] ?? 'Neutral'),
+    _infoRow('Main Trend (1h)',    _data?['trend_1h']  ?? 'Neutral'),
+    _infoRow('Liquidity',    _data?['btc_trend'] ?? 'Neutral'),
+    _infoRow(
+      'Order Imbalance',
+      'Buy ${_data?['imbalance'] ?? 50}% | Sell ${_data?['ask_imbalance'] ?? 50}%',
+      valClr: accent,
+    ),
+  ]);
+
+  Widget _tradePanel() => _panel(
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('Trade Panel', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white)),
+      const SizedBox(height: 18),
+      Row(children: [
+        Expanded(child: _sideBtn('LONG', 'BUY', buyClr)),
+        const SizedBox(width: 10),
+        Expanded(child: _sideBtn('SHORT', 'SELL', sellClr)),
+      ]),
+      const SizedBox(height: 18),
+      _field('Entry Price', _entryCtrl, readOnly: true),
+      const SizedBox(height: 14),
+      Row(children: [
+        Expanded(child: _field('SL', _slCtrl, txtColor: sellClr)),
+        const SizedBox(width: 12),
+        Expanded(child: _field('TP', _tpCtrl, txtColor: buyClr)),
+      ]),
+      const SizedBox(height: 22),
+      SizedBox(
+        width: double.infinity, height: 54,
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: accent,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            elevation: 0,
+          ),
+          onPressed: () {},
+          child: const Text('Execute Trade', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white)),
+        ),
+      ),
+    ]),
+  );
+
+  Widget _panel({required Widget child}) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(color: bgPanel, borderRadius: BorderRadius.circular(24), border: Border.all(color: borderClr)),
+    child: child,
+  );
+
+  Widget _sectionCard(String title, IconData icon, List<Widget> rows) => _panel(
+    child: Column(children: [
+      Row(children: [Icon(icon, color: accent, size: 18), const SizedBox(width: 10), Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white))]),
+      const Divider(color: Colors.white10, height: 28),
+      ...rows,
+    ]),
+  );
+
+  Widget _infoRow(String lbl, dynamic val, {Color? valClr}) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 7),
+    child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      Text(lbl, style: const TextStyle(color: mutedClr, fontSize: 12)),
+      Text(val?.toString() ?? '-', style: TextStyle(color: valClr ?? Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+    ]),
+  );
+
+  Widget _field(
+    String label,
+    TextEditingController ctrl, {
+    bool readOnly = false,
+    Color? txtColor,
+    Color focusBorder = accent,
+    void Function(String)? onChanged,
+  }) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: const TextStyle(color: mutedClr, fontSize: 11)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: ctrl,
+          readOnly: readOnly,
+          onChanged: onChanged,
+          keyboardType: TextInputType.number,
+          style: TextStyle(color: txtColor ?? Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+          decoration: InputDecoration(
+            filled: true, fillColor: bgBody,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borderClr)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: focusBorder)),
+          ),
+        ),
+      ]);
+
+  Widget _sideBtn(String label, String side, Color clr) {
+    final selected = _side == side;
+    return GestureDetector(
+      onTap: () => setState(() => _side = side),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: isSelected ? color : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: isSelected ? color : borderColor)
+          color: selected ? clr : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? clr : borderClr),
         ),
         alignment: Alignment.center,
-        child: Text(label, style: TextStyle(color: isSelected ? Colors.white : textMuted, fontWeight: FontWeight.bold, fontSize: 13)),
+        child: Text(label, style: TextStyle(color: selected ? Colors.white : mutedClr, fontWeight: FontWeight.bold)),
       ),
-    );
-  }
-
-  Widget _buildAlertBox() {
-    int score = int.tryParse(_analysisData!['safety_score']?.toString() ?? '0') ?? 0;
-    bool isSqueezed = _analysisData!['is_squeezed'] ?? false;
-    
-    if (isSqueezed) return _alertItem("فشردگی نوسان (Squeeze)", "احتمال خواب سرمایه یا شکست فیک بالا است.", holdColor, Icons.pause_circle_outline);
-    if (score < 45) return _alertItem("ریسک سنگین", "سیستم ورود به این نماد را پیشنهاد نمی‌کند.", sellColor, Icons.gpp_maybe);
-    return _alertItem("تایید ساختار", "پتانسیل موفقیت استراتژی بالا ارزیابی می‌شود.", buyColor, Icons.gpp_good);
-  }
-
-  Widget _alertItem(String title, String desc, Color color, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: color.withOpacity(0.05), borderRadius: BorderRadius.circular(16), border: Border.all(color: color.withOpacity(0.2))),
-      child: Row(children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(width: 15),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14)),
-          Text(desc, style: TextStyle(color: color.withOpacity(0.8), fontSize: 11)),
-        ])),
-      ]),
     );
   }
 }
